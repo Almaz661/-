@@ -376,3 +376,91 @@ export interface UtilityMeter {
   readings: UtilityReading[];
 }
 
+// ==================== ОБЪЕКТЫ И ПРОСТРАНСТВА ДОМА ====================
+export type PropertyId = 'all' | string;
+
+export interface HouseholdProperty {
+  id: string;
+  name: string;
+  shortName: string;
+  address: string;
+  intercomCode?: string;
+  wifiInfo?: {
+    ssid: string;
+    password?: string;
+  };
+  managementCompany: {
+    name: string;
+    phone: string;
+    dispatchPhone: string;
+    conciergePhone?: string;
+    plumberPhone?: string;
+    electricianPhone?: string;
+  };
+  waterShutoff: {
+    location: string;
+    instructions: string;
+    hasAquaStop: boolean;
+  };
+  electricPanel: {
+    location: string;
+    mainBreaker: string;
+    notes: string;
+  };
+  gasShutoff?: {
+    hasGas: boolean;
+    location?: string;
+    instructions?: string;
+  };
+  firstAidLocation: string;
+  backupKeysLocation: string;
+  notes?: string;
+}
+
+// ==================== SOS, ЭКСТРЕННЫЕ СЛУЖБЫ И ПАМЯТКИ ====================
+export interface PetEmergencyInfo {
+  name: string;
+  species: string;
+  breed: string;
+  weight: string;
+  chipNumber?: string;
+  allergies: string[];
+  restrictions: string[];
+  vetClinicName: string;
+  vetClinicPhone: string;
+  vetClinicAddress: string;
+  is24Hours: boolean;
+}
+
+export interface AccidentStep {
+  step: number;
+  title: string;
+  description: string;
+  important?: boolean;
+}
+
+export interface AccidentGuidance {
+  carModel: string;
+  plateNumber: string;
+  vin?: string;
+  osagoCompany: string;
+  osagoNumber: string;
+  osagoPhone: string;
+  kaskoNumber?: string;
+  kaskoPhone?: string;
+  emergencyPhone: string; // 112
+  steps: AccidentStep[];
+}
+
+export interface MedicalMemberInfo {
+  memberId: string;
+  name: string;
+  role: string;
+  bloodType: string;
+  allergies: string[];
+  chronicConditions: string[];
+  currentMedications: string[];
+  emergencyContactPhone: string;
+}
+
+

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Check,
@@ -54,6 +54,40 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, taskToEdi
     taskToEdit?.subtasks || []
   );
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
+
+  // Синхронизация состояния формы при открытии модального окна или смене редактируемой задачи
+  useEffect(() => {
+    if (isOpen) {
+      if (taskToEdit) {
+        setTitle(taskToEdit.title || '');
+        setDescription(taskToEdit.description || '');
+        setZone(taskToEdit.zone || 'Весь дом');
+        setAssigneeId(taskToEdit.assigneeId ?? null);
+        setIsRotation(taskToEdit.isRotation || false);
+        setRotationOrder(taskToEdit.rotationOrder || members.map((m) => m.id));
+        setRecurrence(taskToEdit.recurrence || 'none');
+        setDueDate(taskToEdit.dueDate || new Date().toISOString().split('T')[0]);
+        setDueTime(taskToEdit.dueTime || '');
+        setPriority(taskToEdit.priority || 'medium');
+        setPoints(taskToEdit.points || 15);
+        setSubtasks(taskToEdit.subtasks || []);
+      } else {
+        setTitle('');
+        setDescription('');
+        setZone('Весь дом');
+        setAssigneeId(null);
+        setIsRotation(false);
+        setRotationOrder(members.map((m) => m.id));
+        setRecurrence('none');
+        setDueDate(new Date().toISOString().split('T')[0]);
+        setDueTime('');
+        setPriority('medium');
+        setPoints(15);
+        setSubtasks([]);
+      }
+      setNewSubtaskTitle('');
+    }
+  }, [isOpen, taskToEdit, members]);
 
   if (!isOpen) return null;
 
@@ -112,7 +146,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, taskToEdi
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs select-none animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-150">
       <div className="w-full max-w-xl bg-[#FCFBF8] rounded-3xl border border-[#EBE7DF] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         <div className="px-6 py-4 border-b border-[#EBE7DF] flex items-center justify-between bg-white">
           <h3 className="text-base font-bold text-[#1F1D1A]">

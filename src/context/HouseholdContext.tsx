@@ -16,6 +16,11 @@ import {
   MedicineItem,
   UtilityMeter,
   UtilityReading,
+  HouseholdProperty,
+  PropertyId,
+  PetEmergencyInfo,
+  AccidentGuidance,
+  MedicalMemberInfo,
 } from '../types';
 import {
   INITIAL_CONTACTS,
@@ -32,6 +37,10 @@ import {
   INITIAL_RECEIPTS,
   INITIAL_MEDICINES,
   INITIAL_UTILITY_METERS,
+  INITIAL_PROPERTIES,
+  INITIAL_PET_EMERGENCY,
+  INITIAL_ACCIDENT_DATA,
+  INITIAL_MEDICAL_EMERGENCY,
 } from '../data/initialData';
 import {
   saveReceiptPhotosToIDB,
@@ -153,6 +162,27 @@ interface HouseholdContextType {
   addMeterReading: (meterId: string, value: number, date?: string, notes?: string) => void;
   toggleReadingSubmitted: (meterId: string, readingId: string) => void;
 
+  // Objects & Property Management (Объекты семьи)
+  properties: HouseholdProperty[];
+  activePropertyId: PropertyId;
+  setActivePropertyId: (id: PropertyId) => void;
+  activeProperty: HouseholdProperty | null;
+  addProperty: (property: Omit<HouseholdProperty, 'id'>) => void;
+  updateProperty: (id: string, updates: Partial<HouseholdProperty>) => void;
+  deleteProperty: (id: string) => void;
+
+  // SOS & Emergency (Экстренный режим)
+  isSOSOpen: boolean;
+  setIsSOSOpen: (open: boolean) => void;
+  petEmergency: PetEmergencyInfo;
+  updatePetEmergency: (updates: Partial<PetEmergencyInfo>) => void;
+  accidentGuidance: AccidentGuidance;
+  updateAccidentGuidance: (updates: Partial<AccidentGuidance>) => void;
+  medicalEmergency: MedicalMemberInfo[];
+  addMedicalEmergency: (med: MedicalMemberInfo) => void;
+  updateMedicalEmergency: (memberId: string, updates: Partial<MedicalMemberInfo>) => void;
+  deleteMedicalEmergency: (memberId: string) => void;
+
   // Backup & Reset
   exportBackupJson: () => void;
   importBackupJson: (jsonString: string) => boolean;
@@ -166,7 +196,7 @@ interface HouseholdContextType {
 
 const HouseholdContext = createContext<HouseholdContextType | undefined>(undefined);
 
-const STORAGE_PREFIX = 'onehaus_ru_';
+const STORAGE_PREFIX = 'onehaus_v4_';
 
 function useLocalStorage<T>(key: string, initialValue: T): [T, React.Dispatch<React.SetStateAction<T>>] {
   const [storedValue, setStoredValue] = useState<T>(() => {
@@ -211,6 +241,21 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // Очистка любых внешних URL фотографий и демо-ссылок Unsplash из localStorage
   useEffect(() => {
+    // 1. Очистка устаревших ключей предыдущих версий кэша
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const legacyPrefixes = ['onehaus_ru_', 'onehaus_v1_', 'onehaus_v2_', 'onehaus_v3_'];
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && legacyPrefixes.some((p) => k.startsWith(p))) {
+            keysToRemove.push(k);
+          }
+        }
+        keysToRemove.forEach((k) => localStorage.removeItem(k));
+      }
+    } catch (_) {}
+
     setMembers((prev) => {
       let changed = false;
       const sanitized = prev.map((m) => {
@@ -383,7 +428,25 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   };
 
   const updateMeter = (id: string, updates: Partial<UtilityMeter>) => {
-    setMeters((prev) => prev.map((m) => (m.id === id ? { ...m, ...updates } : m)));
+    setMeters((prev) =>
+      prev.map((m) => {
+        if (m.id !== id) return m;
+        const newTariff = updates.tariffRate !== undefined ? updates.tariffRate : m.tariffRate;
+        const updatedReadings =
+          updates.tariffRate !== undefined
+            ? m.readings.map((r) => ({
+                ...r,
+                cost: Math.round(r.difference * newTariff * 100) / 100,
+              }))
+            : m.readings;
+
+        return {
+          ...m,
+          ...updates,
+          readings: updatedReadings,
+        };
+      })
+    );
     showToast('Параметры счётчика обновлены', 'success');
   };
 
@@ -445,6 +508,163 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         };
       })
     );
+  };
+
+  // ==================== ОБЪЕКТЫ И ПАСПОРТА ДОМА ====================
+  const [properties, setProperties] = useLocalStorage<HouseholdProperty[]>('properties', INITIAL_PROPERTIES);
+  const [activePropertyId, setActivePropertyId] = useLocalStorage<PropertyId>('active_property_id', 'apartment');
+  const [isSOSOpen, setIsSOSOpen] = useState<boolean>(false);
+
+  const [petEmergency, setPetEmergency] = useLocalStorage<PetEmergencyInfo>('pet_emergency', INITIAL_PET_EMERGENCY);
+  const [accidentGuidance, setAccidentGuidance] = useLocalStorage<AccidentGuidance>('accident_guidance', INITIAL_ACCIDENT_DATA);
+  const [medicalEmergency, setMedicalEmergency] = useLocalStorage<MedicalMemberInfo[]>('medical_emergency', INITIAL_MEDICAL_EMERGENCY);
+
+  // Очистка устаревших демо-шаблонов с привязкой к конкретному городу (Москва) и наполнение контактов мастеров
+  useEffect(() => {
+    setProperties((prev) => {
+      const hasOldMoscow = prev.some(
+        (p) => p.address && (p.address.includes('Москва') || p.address.includes('Ленинский'))
+      );
+      if (hasOldMoscow) return INITIAL_PROPERTIES;
+      return prev.map((p) => {
+        const init = INITIAL_PROPERTIES.find((ip) => ip.id === p.id);
+        if (init && (!p.managementCompany.plumberPhone && !p.managementCompany.electricianPhone)) {
+          return {
+            ...p,
+            managementCompany: {
+              ...p.managementCompany,
+              dispatchPhone: p.managementCompany.dispatchPhone || init.managementCompany.dispatchPhone,
+              plumberPhone: p.managementCompany.plumberPhone || init.managementCompany.plumberPhone,
+              electricianPhone: p.managementCompany.electricianPhone || init.managementCompany.electricianPhone,
+            },
+          };
+        }
+        return p;
+      });
+    });
+
+    setPetEmergency((prev) => {
+      if (!prev || !prev.vetClinicPhone || prev.vetClinicAddress?.includes('Москва')) {
+        return INITIAL_PET_EMERGENCY;
+      }
+      return {
+        ...INITIAL_PET_EMERGENCY,
+        ...prev,
+        restrictions:
+          prev.restrictions && prev.restrictions.length > 0
+            ? prev.restrictions
+            : INITIAL_PET_EMERGENCY.restrictions,
+        vetClinicPhone: prev.vetClinicPhone || INITIAL_PET_EMERGENCY.vetClinicPhone,
+        vetClinicAddress: prev.vetClinicAddress || INITIAL_PET_EMERGENCY.vetClinicAddress,
+        vetClinicName: prev.vetClinicName || INITIAL_PET_EMERGENCY.vetClinicName,
+      };
+    });
+
+    setMedicalEmergency((prev) => {
+      if (!prev || !Array.isArray(prev) || prev.length === 0) {
+        return INITIAL_MEDICAL_EMERGENCY;
+      }
+      return prev.map((med) => {
+        const init = INITIAL_MEDICAL_EMERGENCY.find(
+          (im) => im.name === med.name || im.memberId === med.memberId
+        );
+        return {
+          ...med,
+          bloodType: med.bloodType || init?.bloodType || 'II (A) Rh+',
+          allergies: med.allergies || init?.allergies || [],
+          chronicConditions: med.chronicConditions || init?.chronicConditions || [],
+          currentMedications: med.currentMedications || init?.currentMedications || [],
+          emergencyContactPhone:
+            med.emergencyContactPhone || init?.emergencyContactPhone || '+7 (916) 123-45-67',
+        };
+      });
+    });
+
+    setAccidentGuidance((prev) => {
+      if (prev.carModel && prev.carModel.includes('Skoda Kodiaq')) {
+        return INITIAL_ACCIDENT_DATA;
+      }
+      return prev;
+    });
+
+    setContacts((prev) => {
+      const hasOldCodes = prev.some((c) => c.phone && c.phone.includes('(495)'));
+      if (hasOldCodes) {
+        return prev.map((c) =>
+          c.phone && c.phone.includes('(495)')
+            ? { ...c, phone: c.phone.replace('(495)', '(800)') }
+            : c
+        );
+      }
+      return prev;
+    });
+
+    setDocs((prev) => {
+      const hasOldIssuer = prev.some((d) => d.issuer && d.issuer.includes('Москве'));
+      if (hasOldIssuer) {
+        return prev.map((d) =>
+          d.issuer && d.issuer.includes('Москве')
+            ? { ...d, issuer: 'Управление Росреестра' }
+            : d
+        );
+      }
+      return prev;
+    });
+  }, []);
+
+  const activeProperty = activePropertyId === 'all'
+    ? null
+    : properties.find((p) => p.id === activePropertyId) || properties[0];
+
+  const addProperty = (prop: Omit<HouseholdProperty, 'id'>) => {
+    const newProp: HouseholdProperty = {
+      ...prop,
+      id: `prop-${Date.now()}`,
+    };
+    setProperties((prev) => [...prev, newProp]);
+    showToast(`Объект "${newProp.name}" добавлен`, 'success');
+  };
+
+  const updateProperty = (id: string, updates: Partial<HouseholdProperty>) => {
+    setProperties((prev) => prev.map((p) => (p.id === id ? { ...p, ...updates } : p)));
+    showToast('Паспорт объекта обновлен', 'success');
+  };
+
+  const deleteProperty = (id: string) => {
+    if (properties.length <= 1) {
+      showToast('Нельзя удалить единственный объект дома', 'warning');
+      return;
+    }
+    setProperties((prev) => prev.filter((p) => p.id !== id));
+    if (activePropertyId === id) {
+      setActivePropertyId('all');
+    }
+    showToast('Объект успешно удалён', 'info');
+  };
+
+  const updatePetEmergency = (updates: Partial<PetEmergencyInfo>) => {
+    setPetEmergency((prev) => ({ ...prev, ...updates }));
+    showToast('Данные питомца и ветклиники обновлены', 'success');
+  };
+
+  const updateAccidentGuidance = (updates: Partial<AccidentGuidance>) => {
+    setAccidentGuidance((prev) => ({ ...prev, ...updates }));
+    showToast('Данные автомобиля и памятки ДТП обновлены', 'success');
+  };
+
+  const addMedicalEmergency = (med: MedicalMemberInfo) => {
+    setMedicalEmergency((prev) => [...prev, med]);
+    showToast(`Медицинские данные для ${med.name} добавлены`, 'success');
+  };
+
+  const updateMedicalEmergency = (memberId: string, updates: Partial<MedicalMemberInfo>) => {
+    setMedicalEmergency((prev) => prev.map((m) => (m.memberId === memberId ? { ...m, ...updates } : m)));
+    showToast('Медицинские данные члена семьи обновлены', 'success');
+  };
+
+  const deleteMedicalEmergency = (memberId: string) => {
+    setMedicalEmergency((prev) => prev.filter((m) => m.memberId !== memberId));
+    showToast('Медицинская запись удалена', 'info');
   };
 
   const loadSampleReceipts = () => {
@@ -987,6 +1207,12 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setReceipts(INITIAL_RECEIPTS);
     setMedicines(INITIAL_MEDICINES);
     setMeters(INITIAL_UTILITY_METERS);
+    setProperties(INITIAL_PROPERTIES);
+    setActivePropertyId('apartment');
+    setPetEmergency(INITIAL_PET_EMERGENCY);
+    setAccidentGuidance(INITIAL_ACCIDENT_DATA);
+    setMedicalEmergency(INITIAL_MEDICAL_EMERGENCY);
+    setIsSOSOpen(false);
     setActiveMemberId(null);
     saveAllTasksToIDB(INITIAL_TASKS).catch(() => {});
     saveAllEventsToIDB(INITIAL_EVENTS).catch(() => {});
@@ -1066,6 +1292,23 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         deleteMeter,
         addMeterReading,
         toggleReadingSubmitted,
+        properties,
+        activePropertyId,
+        setActivePropertyId,
+        activeProperty,
+        addProperty,
+        updateProperty,
+        deleteProperty,
+        isSOSOpen,
+        setIsSOSOpen,
+        petEmergency,
+        updatePetEmergency,
+        accidentGuidance,
+        updateAccidentGuidance,
+        medicalEmergency,
+        addMedicalEmergency,
+        updateMedicalEmergency,
+        deleteMedicalEmergency,
         exportBackupJson,
         importBackupJson,
         resetToDefaultData,

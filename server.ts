@@ -137,10 +137,11 @@ async function startServer() {
         .map((m: any) => `${m.id}: ${m.name} (${m.role})`)
         .join(', ');
 
-      const prompt = `Ты — встроенный интеллектуальный ассистент домашнего органайзера «Дом без хаоса» (аналог OneHaus «Send it in»).
-Пользователь передал команду на русском языке, фото чека или голосовую заметку. Твоя цель — извлечь структурированные действия:
-- shopping: позиции в список покупок (title: название товара, category: produce|dairy|meat|bakery|pantry|household|pharmacy|drinks|other, quantity: количество, listId: 'list-supermarket')
+      const prompt = `Ты — встроенный интеллектуальный ассистент домашнего органайзера «Дом без хаоса» (OneHaus «Send it in»).
+Пользователь передал команду, голосовую заметку или фото чека (на русском, греческом (Ελληνικά) или английском языке). Твоя цель — извлечь структурированные действия:
+- shopping: позиции в список покупок (title: название товара (если чек на греческом/английском, переведи на понятный русский или оставь понятное название), category: produce|dairy|meat|bakery|pantry|household|pharmacy|drinks|other, quantity: количество, listId: 'list-supermarket')
   ВАЖНО: Если пользователь говорит «Добавь в список покупок — соль», создай РОВНО ОДНУ позицию с title: "Соль", category: "pantry". Не создавай лишних задач или дубликатов!
+  Если это чек из супермаркета (в т.ч. греческих Sklavenitis, AB Vassilopoulos, Lidl, MyMarket), извлеки купленные товары и разложи по категориям.
 - task: бытовые задачи (title, zone, dueDate, priority, assigneeId)
 - calendar: события календаря (title, date, startTime, endTime, category, memberIds)
 - doc: документы (title, category, documentNumber, expiryDate)
@@ -394,6 +395,177 @@ ${rawText ? `OCR текст чека (дополнительно):\n${rawText}\n
     }
   });
 
+  // Серверный endpoint для автоматического скачивания и AI-структурирования рецептов с любых сайтов/соцсетей
+  app.post('/api/ai/import-recipe', async (req, res) => {
+    const { url, rawText } = req.body;
+
+    if (!url && !rawText) {
+      return res.status(400).json({ error: 'Укажите ссылку или текст рецепта' });
+    }
+
+    let scrapedText = rawText || '';
+    let metaImage = '';
+    let pageTitle = '';
+
+    // Если передан URL — пытаемся скачать страницу и извлечь meta теги, OpenGraph и Recipe Schema JSON-LD
+    if (url && typeof url === 'string' && url.startsWith('http')) {
+      try {
+        const pageRes = await fetch(url, {
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'ru-RU,ru;q=0.9,el;q=0.8,en;q=0.7',
+          },
+          signal: AbortSignal.timeout(6000),
+        });
+
+        if (pageRes.ok) {
+          const html = await pageRes.text();
+
+          // OpenGraph фото
+          const ogImageMatch =
+            html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
+            html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+          if (ogImageMatch && ogImageMatch[1]) {
+            metaImage = ogImageMatch[1];
+          }
+
+          // Заголовок страницы
+          const ogTitleMatch =
+            html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i) ||
+            html.match(/<title[^>]*>([^<]+)<\/title>/i);
+          if (ogTitleMatch && ogTitleMatch[1]) {
+            pageTitle = ogTitleMatch[1].trim();
+          }
+
+          // Поиск schema.org/Recipe JSON-LD
+          const jsonLdMatches = html.match(
+            /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
+          );
+          let extractedRecipeJson = '';
+          if (jsonLdMatches) {
+            for (const block of jsonLdMatches) {
+              const inner = block.replace(/<script[^>]*>|<\/script>/gi, '').trim();
+              if (
+                inner.includes('"Recipe"') ||
+                inner.includes('recipeIngredient') ||
+                inner.includes('recipeInstructions')
+              ) {
+                extractedRecipeJson = inner;
+                break;
+              }
+            }
+          }
+
+          // Очистка от скриптов/стилей
+          const textWithoutScripts = html
+            .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, ' ')
+            .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, ' ')
+            .replace(/<nav\b[^<]*(?:(?!<\/nav>)<[^<]*)*<\/nav>/gi, ' ')
+            .replace(/<footer\b[^<]*(?:(?!<\/footer>)<[^<]*)*<\/footer>/gi, ' ')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+          scrapedText = `${
+            extractedRecipeJson ? 'Schema JSON-LD:\n' + extractedRecipeJson + '\n\n' : ''
+          }Заголовок: ${pageTitle}\nСодержимое страницы:\n${textWithoutScripts.slice(
+            0,
+            7500
+          )}\nПользовательские заметки: ${rawText || ''}`;
+        }
+      } catch (scrapeErr: any) {
+        console.warn('[Recipe Scrape Warning]:', scrapeErr?.message || scrapeErr);
+        scrapedText = `URL источника: ${url}\n${rawText || ''}`;
+      }
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    // Резервный парсер если нет ключа
+    if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
+      const fallbackRecipe = fallbackParseRecipe(scrapedText, url, pageTitle, metaImage);
+      return res.json(fallbackRecipe);
+    }
+
+    try {
+      const ai = new GoogleGenAI({
+        apiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          },
+        },
+      });
+
+      const prompt = `Ты — профессиональный кулинарный шеф и структуризатор семейных рецептов.
+Пользователь передал ссылку на сайт / YouTube / Instagram или скопированный текст кулинарного рецепта.
+Твоя цель — безупречно извлечь или воссоздать понятный, аппетитный, структурированный рецепт на русском языке.
+
+Входные данные:
+Ссылка: ${url || 'Не указана'}
+Контент / Описание / Текст:
+${scrapedText.slice(0, 7500)}
+
+Требования к структуре JSON:
+1. title: Аппетитное, точное название блюда (например: «Греческий салат Хориатики», «Паста карбонара с пармезаном»).
+2. description: Лаконичное описание из 1-2 предложений (в чём изюминка блюда, с чем подавать).
+3. category: Одно из: "breakfast" (завтрак) | "lunch" (обед) | "dinner" (ужин) | "snack" (перекус/десерт).
+4. prepTimeMinutes: Время подготовки в минутах (число, например 15).
+5. cookTimeMinutes: Время варки/жарки в минутах (число, например 20).
+6. servings: Количество порций (число, по умолчанию 4).
+7. calories: Примерная калорийность на 1 порцию (ккал, число, например 380).
+8. image: URL фотографии блюда, если найден валидный адрес в тексте или метатегах (${metaImage ? `"${metaImage}"` : ''}). Если нет — пустая строка "".
+9. tags: Массив из 3-5 актуальных тегов (например: ["Ужин", "Быстро", "Греция", "Семейное"]).
+10. ingredients: Массив ингредиентов. У каждого:
+    - name: понятное название продукта на русском языке (например: "Сыр Фета", "Спагетти", "Оливковое масло Extra Virgin").
+    - amount: количество и единицы (например: "200 г", "2 шт.", "3 ст. л.", "по вкусу").
+    - category: одна из категорий покупок: "produce" (овощи/фрукты/зелень) | "dairy" (молочное, сыры, яйца) | "meat" (мясо, птица, рыба) | "bakery" (хлеб, мука) | "pantry" (крупы, масло, паста, специи, соусы) | "household" | "drinks" | "other".
+11. steps: Массив пошаговых инструкций приготовления на русском языке (1-я строка, 2-я строка... лаконичные, понятные действия).
+
+Верни ТОЛЬКО валидный JSON (без markdown блоков \`\`\`json):
+{
+  "title": "...",
+  "description": "...",
+  "category": "dinner",
+  "prepTimeMinutes": 15,
+  "cookTimeMinutes": 20,
+  "servings": 4,
+  "calories": 380,
+  "image": "...",
+  "tags": ["..."],
+  "ingredients": [
+    { "name": "...", "amount": "...", "category": "produce" }
+  ],
+  "steps": [
+    "..."
+  ]
+}`;
+
+      const { response } = await callGeminiWithFallback(ai, {
+        contents: prompt,
+        timeoutMs: 25000,
+        preferredModels: ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'],
+      });
+
+      const raw = response.text || '';
+      const cleanJson = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(cleanJson);
+
+      if (!parsed.image && metaImage) {
+        parsed.image = metaImage;
+      }
+
+      return res.json(parsed);
+    } catch (err: any) {
+      console.warn('Gemini Recipe Import Warning:', err?.message || err);
+      const fallback = fallbackParseRecipe(scrapedText, url, pageTitle, metaImage);
+      return res.json(fallback);
+    }
+  });
+
   const httpServer = http.createServer(app);
 
   // Настройка Vite в dev режиме или раздача статики в prod
@@ -420,7 +592,74 @@ ${rawText ? `OCR текст чека (дополнительно):\n${rawText}\n
   });
 }
 
+function fallbackParseRecipe(
+  scrapedText: string,
+  url?: string,
+  pageTitle?: string,
+  metaImage?: string
+) {
+  const lines = (scrapedText || '').split('\n').map((l) => l.trim()).filter(Boolean);
+  const cleanTitle = pageTitle ? pageTitle.replace(/[-|].*$/, '').trim() : '';
+  const title = cleanTitle || (lines[0] ? lines[0].slice(0, 60) : 'Вкусное домашнее блюдо');
+
+  const ingredients: Array<{ name: string; amount: string; category: string }> = [];
+  const steps: string[] = [];
+
+  for (const line of lines) {
+    if (
+      line.includes('-') ||
+      line.includes(':') ||
+      line.includes(' г') ||
+      line.includes(' мл') ||
+      line.includes(' шт') ||
+      line.includes(' ст. л.') ||
+      line.includes(' ч. л.')
+    ) {
+      const parts = line.split(/[-:]/);
+      if (parts.length >= 2) {
+        ingredients.push({
+          name: parts[0].trim().replace(/^[*•-]\s*/, ''),
+          amount: parts[1].trim(),
+          category: 'produce',
+        });
+      }
+    } else if (/^\d+[\.\)]/.test(line)) {
+      steps.push(line.replace(/^\d+[\.\)]\s*/, ''));
+    }
+  }
+
+  return {
+    title: title || 'Новый рецепт из интернета',
+    description: 'Импортировано из источника: ' + (url || 'интернет-рецепт'),
+    category: 'dinner',
+    prepTimeMinutes: 15,
+    cookTimeMinutes: 20,
+    servings: 4,
+    calories: 380,
+    image:
+      metaImage ||
+      'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=600&q=80',
+    tags: ['Рецепт из сети', 'Семейное'],
+    ingredients:
+      ingredients.length > 0
+        ? ingredients.slice(0, 15)
+        : [
+            { name: 'Свежие овощи', amount: '300 г', category: 'produce' },
+            { name: 'Оливковое масло', amount: '2 ст. л.', category: 'pantry' },
+            { name: 'Специи и соль', amount: 'по вкусу', category: 'pantry' },
+          ],
+    steps:
+      steps.length > 0
+        ? steps.slice(0, 10)
+        : [
+            'Подготовить ингредиенты, нарезать овощи.',
+            'Приготовить согласно рекомендациям автора и подать к семейному столу.',
+          ],
+  };
+}
+
 startServer().catch((err) => {
   console.error('Failed to start server:', err);
   process.exit(1);
 });
+

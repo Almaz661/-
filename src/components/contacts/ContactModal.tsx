@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Phone, User, MapPin, Star } from 'lucide-react';
 import { useHousehold } from '../../context/HouseholdContext';
 import { ContactCategory, HouseholdContact } from '../../types';
@@ -38,6 +38,17 @@ export const ContactModal: React.FC<ContactModalProps> = ({
   const [notes, setNotes] = useState(contactToEdit?.notes || '');
   const [rating, setRating] = useState(contactToEdit?.rating || 5);
 
+  useEffect(() => {
+    setName(contactToEdit?.name || '');
+    setSpecialty(contactToEdit?.specialty || '');
+    setCategory(contactToEdit?.category || 'plumber');
+    setPhone(contactToEdit?.phone || '');
+    setEmail(contactToEdit?.email || '');
+    setAddress(contactToEdit?.address || '');
+    setNotes(contactToEdit?.notes || '');
+    setRating(contactToEdit?.rating || 5);
+  }, [contactToEdit, isOpen]);
+
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -65,7 +76,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs select-none animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-150">
       <div className="w-full max-w-lg bg-[#FCFBF8] rounded-3xl border border-[#EBE7DF] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         <div className="px-6 py-4 border-b border-[#EBE7DF] flex items-center justify-between bg-white">
           <h3 className="text-base font-bold text-[#1F1D1A]">

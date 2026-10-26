@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, FileText, Upload, Calendar, Paperclip, Trash2 } from 'lucide-react';
 import { useHousehold } from '../../context/HouseholdContext';
 import { DocumentCategory, DocumentItem } from '../../types';
@@ -35,6 +35,35 @@ export const DocModal: React.FC<DocModalProps> = ({ isOpen, onClose, docToEdit }
   const [fileName, setFileName] = useState<string | undefined>(docToEdit?.fileName);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Синхронизация состояния полей при открытии или смене документа
+  useEffect(() => {
+    if (isOpen) {
+      if (docToEdit) {
+        setTitle(docToEdit.title || '');
+        setCategory(docToEdit.category || 'insurance');
+        setDocumentNumber(docToEdit.documentNumber || '');
+        setIssuer(docToEdit.issuer || '');
+        setIssuedDate(docToEdit.issuedDate || '');
+        setExpiryDate(docToEdit.expiryDate || '');
+        setMemberId(docToEdit.memberId);
+        setNotes(docToEdit.notes || '');
+        setFileData(docToEdit.fileData);
+        setFileName(docToEdit.fileName);
+      } else {
+        setTitle('');
+        setCategory('insurance');
+        setDocumentNumber('');
+        setIssuer('');
+        setIssuedDate('');
+        setExpiryDate('');
+        setMemberId(undefined);
+        setNotes('');
+        setFileData(undefined);
+        setFileName(undefined);
+      }
+    }
+  }, [isOpen, docToEdit]);
 
   if (!isOpen) return null;
 
@@ -77,7 +106,7 @@ export const DocModal: React.FC<DocModalProps> = ({ isOpen, onClose, docToEdit }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs select-none animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-150">
       <div className="w-full max-w-lg bg-[#FCFBF8] rounded-3xl border border-[#EBE7DF] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         <div className="px-6 py-4 border-b border-[#EBE7DF] flex items-center justify-between bg-white">
           <h3 className="text-base font-bold text-[#1F1D1A]">

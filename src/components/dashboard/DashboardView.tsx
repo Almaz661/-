@@ -51,6 +51,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     inventory,
     medicines,
     meters,
+    setIsSOSOpen,
   } = useHousehold();
 
   const todayStr = new Date().toISOString().split('T')[0];
@@ -151,7 +152,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   else if (currentHour >= 23 || currentHour < 5) greeting = 'Доброй ночи!';
 
   return (
-    <div className="p-8 space-y-6 max-w-7xl mx-auto select-none">
+    <div className="p-8 space-y-6 max-w-7xl mx-auto">
       {/* Приветственный баннер с быстрой статистикой */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-[#FAF6EE] via-[#F4EFE5] to-[#EFE7D8] p-6 sm:p-8 border border-[#E8E2D4] shadow-xs">
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -168,11 +169,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </h1>
           </div>
 
-          {/* Быстрые карточки сводки */}
-          <div className="grid grid-cols-3 gap-3">
+          {/* Быстрые карточки сводки: Задачи, События, Покупки, SOS */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
             <div
               onClick={() => onNavigate('tasks')}
-              className="bg-white/80 backdrop-blur-xs px-4 py-3 rounded-2xl border border-stone-200/60 shadow-2xs hover:bg-white transition-all cursor-pointer"
+              className="bg-white/80 backdrop-blur-xs px-3.5 py-3 rounded-2xl border border-stone-200/60 shadow-2xs hover:bg-white transition-all cursor-pointer"
             >
               <div className="text-[11px] font-semibold text-[#8A8477]">Задачи на сегодня</div>
               <div className="text-xl font-bold text-[#1F1D1A] mt-0.5">
@@ -185,7 +186,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
             <div
               onClick={() => onNavigate('calendar')}
-              className="bg-white/80 backdrop-blur-xs px-4 py-3 rounded-2xl border border-stone-200/60 shadow-2xs hover:bg-white transition-all cursor-pointer"
+              className="bg-white/80 backdrop-blur-xs px-3.5 py-3 rounded-2xl border border-stone-200/60 shadow-2xs hover:bg-white transition-all cursor-pointer"
             >
               <div className="text-[11px] font-semibold text-[#8A8477]">События дня</div>
               <div className="text-xl font-bold text-[#1F1D1A] mt-0.5">
@@ -195,11 +196,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
             <div
               onClick={() => onNavigate('shopping')}
-              className="bg-white/80 backdrop-blur-xs px-4 py-3 rounded-2xl border border-stone-200/60 shadow-2xs hover:bg-white transition-all cursor-pointer"
+              className="bg-white/80 backdrop-blur-xs px-3.5 py-3 rounded-2xl border border-stone-200/60 shadow-2xs hover:bg-white transition-all cursor-pointer"
             >
               <div className="text-[11px] font-semibold text-[#8A8477]">К покупке</div>
               <div className="text-xl font-bold text-[#1F1D1A] mt-0.5">
                 {shoppingItems.filter((i) => !i.completed).length}
+              </div>
+            </div>
+
+            {/* Плитка быстрого перехода в SOS */}
+            <div
+              onClick={() => setIsSOSOpen(true)}
+              className="bg-gradient-to-br from-red-600 to-rose-700 text-white px-3.5 py-3 rounded-2xl shadow-sm hover:brightness-110 active:scale-95 transition-all cursor-pointer border border-red-500/50 flex flex-col justify-between"
+              title="Открыть экстренный режим SOS (без пароля)"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-red-100 uppercase tracking-wider">Экстренно</span>
+                <ShieldAlert className="w-3.5 h-3.5 text-white animate-pulse" />
+              </div>
+              <div className="text-lg font-black mt-0.5 tracking-tight flex items-baseline justify-between">
+                <span>SOS</span>
+                <span className="text-[11px] font-semibold text-red-100">112 • ЖКХ</span>
               </div>
             </div>
           </div>
@@ -549,7 +566,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 {criticalItems.map((c, i) => (
                   <div
                     key={i}
-                    onClick={() => onNavigate(c.type === 'doc' ? 'docs' : 'inventory')}
+                    onClick={() =>
+                      onNavigate(c.type === 'doc' ? 'docs' : c.type === 'medicine' ? 'firstaid' : 'inventory')
+                    }
                     className="p-2.5 rounded-xl bg-white border border-amber-200/70 hover:shadow-xs transition-all cursor-pointer"
                   >
                     <div className="text-xs font-bold text-[#1F1D1A] truncate">

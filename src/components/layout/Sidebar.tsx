@@ -14,6 +14,7 @@ import {
   Users,
   Pill,
   Gauge,
+  ShieldAlert,
 } from 'lucide-react';
 import { useHousehold } from '../../context/HouseholdContext';
 import { MemberAvatar } from '../common/MemberAvatar';
@@ -55,6 +56,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     docs,
     medicines,
     meters,
+    setIsSOSOpen,
   } = useHousehold();
 
   const todayStr = new Date().toISOString().split('T')[0];
@@ -170,7 +172,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   return (
-    <aside className="w-64 bg-[#FCFBF8] border-r border-[#EBE7DF] flex flex-col justify-between h-screen shrink-0 select-none">
+    <aside className="hidden md:flex w-64 bg-[#FCFBF8] border-r border-[#EBE7DF] flex-col justify-between h-screen shrink-0 select-none">
       {/* Верхняя часть: Логотип и переключатель семьи */}
       <div className="p-4 border-b border-[#EBE7DF]">
         <div className="flex items-center space-x-3 mb-4">
@@ -283,8 +285,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
         })}
       </nav>
 
-      {/* Кнопка установки приложения PWA */}
+      {/* Красная кнопка экстренного режима SOS */}
       <div className="px-3 pt-2 pb-1">
+        <button
+          onClick={() => setIsSOSOpen(true)}
+          className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-black text-xs shadow-md border border-red-500 hover:shadow-red-600/30 active:scale-[0.98] transition-all cursor-pointer group"
+          title="Открыть экстренный экран SOS (без пароля)"
+        >
+          <div className="flex items-center space-x-2">
+            <ShieldAlert className="w-4 h-4 text-white animate-pulse" />
+            <span className="tracking-wider uppercase font-black">SOS Помощь</span>
+          </div>
+          <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">
+            112 • ЖКХ
+          </span>
+        </button>
+      </div>
+
+      {/* Кнопка установки приложения PWA */}
+      <div className="px-3 pt-1 pb-1">
         <PWAInstallButton variant="sidebar" />
       </div>
 

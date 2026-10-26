@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, Package, Shield, Calendar, DollarSign, Wrench } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Package, Shield, Calendar, DollarSign, Wrench, Dog, Car, Tv, CreditCard } from 'lucide-react';
 import { useHousehold } from '../../context/HouseholdContext';
 import { HouseholdZone, InventoryCategory, InventoryItem } from '../../types';
 
@@ -7,13 +7,14 @@ interface InventoryItemModalProps {
   isOpen: boolean;
   onClose: () => void;
   itemToEdit?: InventoryItem | null;
+  defaultCategory?: InventoryCategory;
 }
 
 const CATEGORIES: Array<{ id: InventoryCategory; label: string }> = [
   { id: 'appliances', label: 'Бытовая техника' },
   { id: 'electronics', label: 'Гаджеты и электроника' },
   { id: 'vehicles', label: 'Автомобиль / Транспорт' },
-  { id: 'pets', label: 'Домашние животные' },
+  { id: 'pets', label: 'Домашние животные (Питомцы)' },
   { id: 'subscriptions', label: 'Подписки и сервисы' },
   { id: 'home', label: 'Дом и мебель' },
 ];
@@ -34,52 +35,91 @@ export const InventoryItemModal: React.FC<InventoryItemModalProps> = ({
   isOpen,
   onClose,
   itemToEdit,
+  defaultCategory = 'appliances',
 }) => {
-  const { addInventoryItem, updateInventoryItem } = useHousehold();
+  const { addInventoryItem, updateInventoryItem, showToast } = useHousehold();
 
-  const [name, setName] = useState(itemToEdit?.name || '');
-  const [category, setCategory] = useState<InventoryCategory>(
-    itemToEdit?.category || 'appliances'
-  );
-  const [locationZone, setLocationZone] = useState<HouseholdZone>(
-    itemToEdit?.locationZone || 'Кухня'
-  );
-  const [model, setModel] = useState(itemToEdit?.model || '');
-  const [serialNumber, setSerialNumber] = useState(itemToEdit?.serialNumber || '');
-  const [purchaseDate, setPurchaseDate] = useState(itemToEdit?.purchaseDate || '');
-  const [warrantyExpiry, setWarrantyExpiry] = useState(itemToEdit?.warrantyExpiry || '');
-  const [price, setPrice] = useState<number | undefined>(itemToEdit?.price);
-  const [notes, setNotes] = useState(itemToEdit?.notes || '');
-  const [serviceIntervalDays, setServiceIntervalDays] = useState<number | undefined>(
-    itemToEdit?.serviceIntervalDays
-  );
+  const [name, setName] = useState('');
+  const [category, setCategory] = useState<InventoryCategory>(defaultCategory);
+  const [locationZone, setLocationZone] = useState<HouseholdZone>('Весь дом');
+  const [model, setModel] = useState('');
+  const [serialNumber, setSerialNumber] = useState('');
+  const [purchaseDate, setPurchaseDate] = useState('');
+  const [warrantyExpiry, setWarrantyExpiry] = useState('');
+  const [price, setPrice] = useState<number | undefined>();
+  const [notes, setNotes] = useState('');
+  const [serviceIntervalDays, setServiceIntervalDays] = useState<number | undefined>();
 
   // Специфика авто
-  const [licensePlate, setLicensePlate] = useState(
-    itemToEdit?.vehicleDetails?.licensePlate || ''
-  );
-  const [insuranceExpiry, setInsuranceExpiry] = useState(
-    itemToEdit?.vehicleDetails?.insuranceExpiry || ''
-  );
+  const [licensePlate, setLicensePlate] = useState('');
+  const [insuranceExpiry, setInsuranceExpiry] = useState('');
 
   // Специфика питомца
-  const [breed, setBreed] = useState(itemToEdit?.petDetails?.breed || '');
-  const [chipNumber, setChipNumber] = useState(itemToEdit?.petDetails?.chipNumber || '');
-  const [nextVaccinationDate, setNextVaccinationDate] = useState(
-    itemToEdit?.petDetails?.nextVaccinationDate || ''
-  );
+  const [breed, setBreed] = useState('');
+  const [chipNumber, setChipNumber] = useState('');
+  const [nextVaccinationDate, setNextVaccinationDate] = useState('');
 
   // Специфика подписки
-  const [subCost, setSubCost] = useState(itemToEdit?.subscriptionDetails?.cost || 399);
-  const [nextPaymentDate, setNextPaymentDate] = useState(
-    itemToEdit?.subscriptionDetails?.nextPaymentDate || ''
-  );
+  const [subCost, setSubCost] = useState(399);
+  const [nextPaymentDate, setNextPaymentDate] = useState('');
+
+  // Синхронизация полей при открытии или смене редактируемого предмета
+  useEffect(() => {
+    if (isOpen) {
+      if (itemToEdit) {
+        setName(itemToEdit.name || '');
+        setCategory(itemToEdit.category || 'appliances');
+        setLocationZone(itemToEdit.locationZone || 'Весь дом');
+        setModel(itemToEdit.model || '');
+        setSerialNumber(itemToEdit.serialNumber || '');
+        setPurchaseDate(itemToEdit.purchaseDate || '');
+        setWarrantyExpiry(itemToEdit.warrantyExpiry || '');
+        setPrice(itemToEdit.price);
+        setNotes(itemToEdit.notes || '');
+        setServiceIntervalDays(itemToEdit.serviceIntervalDays);
+
+        setLicensePlate(itemToEdit.vehicleDetails?.licensePlate || '');
+        setInsuranceExpiry(itemToEdit.vehicleDetails?.insuranceExpiry || '');
+
+        setBreed(itemToEdit.petDetails?.breed || '');
+        setChipNumber(itemToEdit.petDetails?.chipNumber || '');
+        setNextVaccinationDate(itemToEdit.petDetails?.nextVaccinationDate || '');
+
+        setSubCost(itemToEdit.subscriptionDetails?.cost || 399);
+        setNextPaymentDate(itemToEdit.subscriptionDetails?.nextPaymentDate || '');
+      } else {
+        setName('');
+        setCategory(defaultCategory);
+        setLocationZone(defaultCategory === 'pets' ? 'Весь дом' : defaultCategory === 'vehicles' ? 'Авто' : 'Кухня');
+        setModel('');
+        setSerialNumber('');
+        setPurchaseDate('');
+        setWarrantyExpiry('');
+        setPrice(undefined);
+        setNotes('');
+        setServiceIntervalDays(undefined);
+
+        setLicensePlate('');
+        setInsuranceExpiry('');
+
+        setBreed('');
+        setChipNumber('');
+        setNextVaccinationDate('');
+
+        setSubCost(399);
+        setNextPaymentDate('');
+      }
+    }
+  }, [isOpen, itemToEdit, defaultCategory]);
 
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim()) {
+      showToast(category === 'pets' ? 'Укажите кличку питомца' : 'Укажите название предмета', 'warning');
+      return;
+    }
 
     const data: Omit<InventoryItem, 'id'> = {
       name: name.trim(),
@@ -127,15 +167,30 @@ export const InventoryItemModal: React.FC<InventoryItemModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs select-none animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-150">
       <div className="w-full max-w-lg bg-[#FCFBF8] rounded-3xl border border-[#EBE7DF] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         <div className="px-6 py-4 border-b border-[#EBE7DF] flex items-center justify-between bg-white">
-          <h3 className="text-base font-bold text-[#1F1D1A]">
-            {itemToEdit ? 'Редактировать предмет' : 'Добавить предмет в инвентарь'}
-          </h3>
+          <div className="flex items-center space-x-2">
+            {category === 'pets' ? (
+              <Dog className="w-5 h-5 text-amber-600" />
+            ) : category === 'vehicles' ? (
+              <Car className="w-5 h-5 text-blue-600" />
+            ) : (
+              <Package className="w-5 h-5 text-[#E15A42]" />
+            )}
+            <h3 className="text-base font-bold text-[#1F1D1A]">
+              {category === 'pets'
+                ? itemToEdit
+                  ? 'Редактировать данные питомца'
+                  : 'Добавить питомца в семью'
+                : itemToEdit
+                ? 'Редактировать предмет'
+                : 'Добавить предмет в инвентарь'}
+            </h3>
+          </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-xl text-stone-400 hover:text-stone-700 hover:bg-black/5"
+            className="p-1.5 rounded-xl text-stone-400 hover:text-stone-700 hover:bg-black/5 cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -144,14 +199,18 @@ export const InventoryItemModal: React.FC<InventoryItemModalProps> = ({
         <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-4 flex-1">
           <div>
             <label className="block text-xs font-bold text-[#1F1D1A] mb-1">
-              Название предмета *
+              {category === 'pets' ? 'Кличка питомца *' : 'Название предмета *'}
             </label>
             <input
               type="text"
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Например: Стиральная машина LG, Автомобиль, Собака..."
+              placeholder={
+                category === 'pets'
+                  ? 'Например: Корги Барни, Кот Барсик, попугай Кеша...'
+                  : 'Например: Стиральная машина LG, Автомобиль...'
+              }
               className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-[#E3DFD5] text-sm text-[#1F1D1A] focus:outline-none focus:ring-2 focus:ring-[#E15A42]/30 focus:border-[#E15A42]"
             />
           </div>

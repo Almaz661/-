@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { ShieldAlert } from 'lucide-react';
 import { HouseholdProvider, useHousehold } from './context/HouseholdContext';
 import { Sidebar, NavTab } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
@@ -14,15 +15,21 @@ import { ContactsView } from './components/contacts/ContactsView';
 import { SettingsView } from './components/settings/SettingsView';
 import { FirstAidView } from './components/firstaid/FirstAidView';
 import { UtilitiesView } from './components/utilities/UtilitiesView';
+import { SOSView } from './components/sos/SOSView';
 import { QuickCaptureModal } from './components/ai/QuickCaptureModal';
 import { TaskModal } from './components/tasks/TaskModal';
 import { EventModal } from './components/calendar/EventModal';
 import { ToastContainer } from './components/common/ToastContainer';
 import { OfflineStatusIndicator } from './components/common/OfflineStatusIndicator';
+import { BottomNav } from './components/layout/BottomNav';
+import { GlobalSearchModal } from './components/common/GlobalSearchModal';
 
 const MainApp: React.FC = () => {
+  const { isSOSOpen, setIsSOSOpen } = useHousehold();
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
   const [isQuickCaptureOpen, setIsQuickCaptureOpen] = useState(false);
+  const [isVoiceMode, setIsVoiceMode] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
 
@@ -75,7 +82,15 @@ const MainApp: React.FC = () => {
         <Header
           title={title}
           subtitle={subtitle}
-          onOpenQuickCapture={() => setIsQuickCaptureOpen(true)}
+          onOpenQuickCapture={() => {
+            setIsVoiceMode(false);
+            setIsQuickCaptureOpen(true);
+          }}
+          onOpenVoiceCapture={() => {
+            setIsVoiceMode(true);
+            setIsQuickCaptureOpen(true);
+          }}
+          onOpenSearch={() => setIsSearchOpen(true)}
           onPrimaryAction={
             activeTab === 'tasks'
               ? () => setIsTaskModalOpen(true)
@@ -92,12 +107,15 @@ const MainApp: React.FC = () => {
           }
         />
 
-        {/* Скроллируемый контент */}
-        <main className="flex-1 overflow-y-auto overflow-x-hidden">
+        {/* Скроллируемый контент с отступом под мобильную навигацию pb-20 md:pb-0 */}
+        <main className="flex-1 overflow-y-auto overflow-x-hidden pb-20 md:pb-0">
           {activeTab === 'dashboard' && (
             <DashboardView
               onNavigate={setActiveTab}
-              onOpenQuickCapture={() => setIsQuickCaptureOpen(true)}
+              onOpenQuickCapture={() => {
+                setIsVoiceMode(false);
+                setIsQuickCaptureOpen(true);
+              }}
               onNewTask={() => setIsTaskModalOpen(true)}
               onNewEvent={() => setIsEventModalOpen(true)}
             />
@@ -116,10 +134,38 @@ const MainApp: React.FC = () => {
         </main>
       </div>
 
+      {/* Мобильная нижняя навигация BottomNav */}
+      <BottomNav
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        onOpenQuickCapture={() => {
+          setIsVoiceMode(false);
+          setIsQuickCaptureOpen(true);
+        }}
+        onOpenVoiceCapture={() => {
+          setIsVoiceMode(true);
+          setIsQuickCaptureOpen(true);
+        }}
+      />
+
+      {/* Глобальный поиск «Где лежит?» */}
+      <GlobalSearchModal
+        isOpen={isSearchOpen}
+        onClose={() => setIsSearchOpen(false)}
+        onNavigate={(tab) => {
+          setActiveTab(tab);
+          setIsSearchOpen(false);
+        }}
+      />
+
       {/* Глобальное модальное окно «Send it in» / Умный ввод */}
       <QuickCaptureModal
         isOpen={isQuickCaptureOpen}
-        onClose={() => setIsQuickCaptureOpen(false)}
+        initialVoice={isVoiceMode}
+        onClose={() => {
+          setIsQuickCaptureOpen(false);
+          setIsVoiceMode(false);
+        }}
       />
 
       {/* Быстрое модальное окно создания задачи */}
@@ -133,6 +179,17 @@ const MainApp: React.FC = () => {
         isOpen={isEventModalOpen}
         onClose={() => setIsEventModalOpen(false)}
       />
+
+      {/* Экран экстренной помощи SOS (без пароля, полноэкранный режим) */}
+      {isSOSOpen && (
+        <SOSView
+          onClose={() => setIsSOSOpen(false)}
+          onNavigateToFirstAid={() => {
+            setIsSOSOpen(false);
+            setActiveTab('firstaid');
+          }}
+        />
+      )}
 
       {/* Всплывающие уведомления (Тосты) */}
       <ToastContainer />

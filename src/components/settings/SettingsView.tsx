@@ -24,6 +24,7 @@ import { useHousehold } from '../../context/HouseholdContext';
 import { MemberAvatar } from '../common/MemberAvatar';
 import { processAndResizeImage, getMemberInitials } from '../../utils/imageUtils';
 import { PWAInstallButton } from '../common/PWAInstallButton';
+import { clearAllCacheAndReload } from '../../utils/cacheUtils';
 
 export const SettingsView: React.FC = () => {
   const {
@@ -64,6 +65,7 @@ export const SettingsView: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const newMemberPhotoInputRef = useRef<HTMLInputElement>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showCacheConfirm, setShowCacheConfirm] = useState(false);
 
   const startEditMember = (member: any) => {
     setEditingMemberId(member.id);
@@ -162,7 +164,7 @@ export const SettingsView: React.FC = () => {
   };
 
   return (
-    <div className="p-8 space-y-8 max-w-4xl mx-auto select-none">
+    <div className="p-8 space-y-8 max-w-4xl mx-auto">
       {/* 1. Название домохозяйства */}
       <div className="bg-white rounded-3xl p-6 border border-[#EBE7DF] shadow-xs space-y-4">
         <div className="flex items-center space-x-3 pb-3 border-b border-[#F0ECE1]">
@@ -670,11 +672,11 @@ export const SettingsView: React.FC = () => {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {/* Экспорт */}
           <button
             onClick={exportBackupJson}
-            className="flex items-center justify-center space-x-2 p-3 rounded-2xl bg-[#FAF8F3] border border-[#E3DFD5] hover:bg-[#F3EFE6] text-xs font-semibold text-[#1F1D1A] transition-all cursor-pointer"
+            className="flex items-center justify-center space-x-2 p-3 rounded-2xl bg-[#FAF8F3] border border-[#E3DFD5] hover:bg-[#F3EFE6] text-xs font-semibold text-[#1F1D1A] transition-all cursor-pointer shadow-2xs"
           >
             <Download className="w-4 h-4 text-blue-600" />
             <span>Экспорт в JSON</span>
@@ -690,16 +692,25 @@ export const SettingsView: React.FC = () => {
           />
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="flex items-center justify-center space-x-2 p-3 rounded-2xl bg-[#FAF8F3] border border-[#E3DFD5] hover:bg-[#F3EFE6] text-xs font-semibold text-[#1F1D1A] transition-all cursor-pointer"
+            className="flex items-center justify-center space-x-2 p-3 rounded-2xl bg-[#FAF8F3] border border-[#E3DFD5] hover:bg-[#F3EFE6] text-xs font-semibold text-[#1F1D1A] transition-all cursor-pointer shadow-2xs"
           >
             <Upload className="w-4 h-4 text-emerald-600" />
             <span>Импорт из JSON</span>
           </button>
 
+          {/* Очистить кэш */}
+          <button
+            onClick={() => setShowCacheConfirm(true)}
+            className="flex items-center justify-center space-x-2 p-3 rounded-2xl bg-amber-50/70 border border-amber-300 hover:bg-amber-100/70 text-xs font-semibold text-amber-900 transition-all cursor-pointer shadow-2xs"
+          >
+            <RefreshCw className="w-4 h-4 text-amber-600" />
+            <span>Очистить кэш браузера</span>
+          </button>
+
           {/* Сброс */}
           <button
             onClick={() => setShowResetConfirm(true)}
-            className="flex items-center justify-center space-x-2 p-3 rounded-2xl bg-rose-50/50 border border-rose-200 hover:bg-rose-100/50 text-xs font-semibold text-rose-800 transition-all cursor-pointer"
+            className="flex items-center justify-center space-x-2 p-3 rounded-2xl bg-rose-50/50 border border-rose-200 hover:bg-rose-100/50 text-xs font-semibold text-rose-800 transition-all cursor-pointer shadow-2xs"
           >
             <RotateCcw className="w-4 h-4 text-rose-600" />
             <span>Сброс к демо</span>
@@ -745,6 +756,42 @@ export const SettingsView: React.FC = () => {
                 className="flex-1 py-2 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
               >
                 Сбросить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Модальное окно подтверждения очистки кэша */}
+      {showCacheConfirm && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-amber-200 text-center space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto">
+              <RefreshCw className="w-6 h-6 animate-spin" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-[#1F1E1C]">Очистить кэш приложения?</h3>
+              <p className="text-xs text-[#7A746B] mt-1 leading-relaxed">
+                Сервисные воркеры и временный кэш браузера будут сброшены. Приложение перезагрузит самые свежие скрипты. Все ваши сохранённые данные останутся на месте.
+              </p>
+            </div>
+            <div className="flex items-center space-x-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowCacheConfirm(false)}
+                className="flex-1 py-2 px-3 rounded-xl border border-[#DDD8CD] text-xs font-semibold text-[#5A554D] hover:bg-[#F2EFE9] transition-colors cursor-pointer"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCacheConfirm(false);
+                  clearAllCacheAndReload();
+                }}
+                className="flex-1 py-2 px-3 rounded-xl bg-[#E15A42] hover:bg-[#D04931] text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
+              >
+                Да, очистить
               </button>
             </div>
           </div>

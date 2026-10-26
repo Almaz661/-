@@ -13,13 +13,17 @@ import {
   ScannedReceipt,
   MedicineItem,
   UtilityMeter,
+  HouseholdProperty,
+  PetEmergencyInfo,
+  AccidentGuidance,
+  MedicalMemberInfo,
 } from '../types';
 
 export const INITIAL_MEMBERS: FamilyMember[] = [
   {
     id: 'member-1',
-    name: 'Анна',
-    role: 'Мама • Организатор',
+    name: 'Ольга',
+    role: 'Мама • Владелец',
     color: {
       bg: 'bg-rose-50',
       text: 'text-rose-700',
@@ -27,13 +31,13 @@ export const INITIAL_MEMBERS: FamilyMember[] = [
       hex: '#E11D48',
       badgeBg: 'bg-rose-100 text-rose-800',
     },
-    email: 'anna@onehaus.local',
+    email: 'olga@family.local',
     phone: '+7 (916) 123-45-67',
   },
   {
     id: 'member-2',
-    name: 'Максим',
-    role: 'Папа • Инженер',
+    name: 'Сергей',
+    role: 'Папа • Взрослый',
     color: {
       bg: 'bg-blue-50',
       text: 'text-blue-700',
@@ -41,7 +45,7 @@ export const INITIAL_MEMBERS: FamilyMember[] = [
       hex: '#2563EB',
       badgeBg: 'bg-blue-100 text-blue-800',
     },
-    email: 'maxim@onehaus.local',
+    email: 'sergey@family.local',
     phone: '+7 (916) 987-65-43',
   },
   {
@@ -734,8 +738,8 @@ export const INITIAL_DOCS: DocumentItem[] = [
     id: 'doc-2',
     title: 'Договор купли-продажи квартиры',
     category: 'property',
-    documentNumber: 'ДКП-77/2021-094',
-    issuer: 'Управление Росреестра по г. Москве',
+    documentNumber: 'ДКП-2021/094',
+    issuer: 'Управление Росреестра',
     issuedDate: '2021-06-15',
     notes: 'Выписка из ЕГРН в электронном виде с ЭЦП. Долевая собственность 1/2',
   },
@@ -796,17 +800,17 @@ export const INITIAL_CONTACTS: HouseholdContact[] = [
     name: 'Ветклиника «ВетЗабота»',
     specialty: 'Терапия, вакцинация, чипирование',
     category: 'vet',
-    phone: '+7 (495) 888-00-22',
+    phone: '+7 (800) 200-88-22',
     address: 'ул. Зелёная, д. 8 (в 5 минутах пешком)',
-    notes: 'Круглосуточный стационар, лечащий врач Барни — доктор Смирнов.',
+    notes: 'Круглосуточный стационар, лечащий врач Барни — дежурный доктор.',
     rating: 4.8,
   },
   {
     id: 'contact-5',
-    name: 'Диспетчерская ЖКХ / Аварийная служба',
+    name: 'Диспетчерская ЖКХ / Аварийная служба дома',
     specialty: 'Аварии водопровода, лифты, отопление',
     category: 'emergency',
-    phone: '+7 (495) 112-00-00',
+    phone: '+7 (800) 112-00-00',
     address: 'Подъезд 1, цокольный этаж',
     notes: 'Круглосуточный дежурный инженер. Заявки принимают по номеру лицевого счёта.',
     rating: 4.5,
@@ -1394,5 +1398,226 @@ export const INITIAL_UTILITY_METERS: UtilityMeter[] = [
     ],
   },
 ];
+
+// ==================== ОБЪЕКТЫ И ПАСПОРТА НЕДВИЖИМОСТИ ====================
+export const INITIAL_PROPERTIES: HouseholdProperty[] = [
+  {
+    id: 'apartment',
+    name: 'Основная квартира',
+    shortName: 'Квартира',
+    address: 'ул. Центральная, д. 24, кв. 142',
+    intercomCode: '142К4580',
+    wifiInfo: {
+      ssid: 'Home_WiFi_5G',
+      password: '',
+    },
+    managementCompany: {
+      name: 'Управляющая компания дома',
+      phone: '+7 (800) 112-00-01',
+      dispatchPhone: '+7 (800) 112-00-01',
+      plumberPhone: '+7 (900) 123-45-67',
+      electricianPhone: '+7 (900) 987-65-43',
+    },
+    waterShutoff: {
+      location: 'Ревизионный люк в санузле за унитазом',
+      instructions: 'Повернуть оба вводных крана (ХВС и ГВС) на 90° по часовой стрелке до упора (перпендикулярно оси трубы).',
+      hasAquaStop: true,
+    },
+    electricPanel: {
+      location: 'Электрощит в прихожей у входной двери',
+      mainBreaker: 'Главный вводной автомат (опустить тумблер вниз)',
+      notes: 'Для полного обесточивания квартиры выключить вводной автомат.',
+    },
+    gasShutoff: {
+      hasGas: false,
+    },
+    firstAidLocation: 'Верхняя полка шкафа в коридоре, аптечный бокс с красным крестом.',
+    backupKeysLocation: 'Запасной комплект у доверенных соседей.',
+    notes: '',
+  },
+  {
+    id: 'sergey',
+    name: 'Жильё Сергея',
+    shortName: 'У Сергея',
+    address: 'ул. Садовая, д. 18, кв. 29',
+    intercomCode: '29B1234',
+    wifiInfo: {
+      ssid: 'Sergey_Home',
+      password: '',
+    },
+    managementCompany: {
+      name: 'ТСЖ дома',
+      phone: '+7 (800) 112-00-02',
+      dispatchPhone: '+7 (800) 112-00-02',
+      plumberPhone: '+7 (900) 222-33-44',
+      electricianPhone: '+7 (900) 555-66-77',
+    },
+    waterShutoff: {
+      location: 'Кухня, под мойкой за сифоном',
+      instructions: 'Два шаровых крана: повернуть обе бабочки до упора перпендикулярно оси трубы.',
+      hasAquaStop: false,
+    },
+    electricPanel: {
+      location: 'В этажном тамбурном щитке',
+      mainBreaker: 'Вводной автомат с маркировкой квартиры (опустить вниз)',
+      notes: 'Ключ от тамбурного щитка висит в прихожей.',
+    },
+    gasShutoff: {
+      hasGas: false,
+    },
+    firstAidLocation: 'Ванная комната, зеркальный навесной шкафчик над раковиной.',
+    backupKeysLocation: 'Комплект ключей в квартире у Ольги.',
+    notes: '',
+  },
+  {
+    id: 'dacha',
+    name: 'Загородный дом / Дача',
+    shortName: 'Дача',
+    address: 'Загородный поселок / СНТ, уч. 84',
+    intercomCode: 'Код калитки: 5821#',
+    wifiInfo: {
+      ssid: 'Dacha_LTE',
+      password: '',
+    },
+    managementCompany: {
+      name: 'Правление посёлка / Охрана',
+      phone: '+7 (800) 112-00-03',
+      dispatchPhone: '+7 (800) 112-00-03',
+      plumberPhone: '+7 (900) 777-88-99',
+      electricianPhone: '+7 (900) 333-22-11',
+    },
+    waterShutoff: {
+      location: 'Вводной вентиль в котельной / кессон скважины',
+      instructions: 'Главный вентиль подачи воды перекрыть в горизонтальное положение. На зиму слить воду из бойлера.',
+      hasAquaStop: false,
+    },
+    electricPanel: {
+      location: 'Щит в котельной / прихожей',
+      mainBreaker: 'Главный вводной рубильник (положение «0 / ВЫКЛ»)',
+      notes: 'При отключении электричества проверить вводной автомат.',
+    },
+    gasShutoff: {
+      hasGas: false,
+    },
+    firstAidLocation: 'Кухня, настенный шкафчик «Аптечка» рядом с холодильником.',
+    backupKeysLocation: 'В кодовом мини-сейфе на веранде.',
+    notes: '',
+  },
+];
+
+// ==================== SOS: ВЕТЕРИНАРИЯ И ПИТОМЕЦ ====================
+export const INITIAL_PET_EMERGENCY: PetEmergencyInfo = {
+  name: 'Барсик',
+  species: 'Кот',
+  breed: 'Британская короткошёрстная',
+  weight: '4.8 кг',
+  chipNumber: '643098100123456',
+  allergies: ['Курица и куриный белок (вызывает дерматит)'],
+  restrictions: [
+    'Категорически запрещена еда со стола: шоколад, лук, чеснок, изюм и виноград смертельно токсичны для кошек!',
+    'Не открывать пластиковые окна на вертикальное проветривание без защитных решёток-антикошек!',
+    'Препараты и капли от блох для собак токсичны для кошек!',
+  ],
+  vetClinicName: 'Дежурная круглосуточная ветеринарная клиника',
+  vetClinicPhone: '+7 (800) 200-88-22',
+  vetClinicAddress: 'ул. Зелёная, д. 8 (круглосуточный стационар 24/7)',
+  is24Hours: true,
+};
+
+// ==================== SOS: ПАМЯТКА ПРИ ДТП ====================
+export const INITIAL_ACCIDENT_DATA: AccidentGuidance = {
+  carModel: 'Семейный автомобиль',
+  plateNumber: 'А 000 АА 00',
+  vin: '',
+  osagoCompany: 'Страховая компания',
+  osagoNumber: '',
+  osagoPhone: '8 (800) 000-00-00',
+  kaskoNumber: '',
+  kaskoPhone: '8 (800) 000-00-00',
+  emergencyPhone: '112',
+  steps: [
+    {
+      step: 1,
+      title: 'Остановиться немедленно и включить аварийку',
+      description: 'Заглушите двигатель, включите аварийную световую сигнализацию. Не перемещайте транспортное средство и предметы на дороге ни на сантиметр.',
+      important: true,
+    },
+    {
+      step: 2,
+      title: 'Выставить знак аварийной остановки',
+      description: 'Наденьте светоотражающий жилет перед выходом на проезжую часть. Выставите знак: не менее 15 м от машины в городе, не менее 30 м вне населённого пункта.',
+      important: true,
+    },
+    {
+      step: 3,
+      title: 'Оценить состояние людей и вызвать 112',
+      description: 'Если есть пострадавшие — немедленно звоните 112 или 103 (Скорая). Окажите первую доврачебную помощь. Не перемещайте тяжелораненых до приезда медиков, если нет угрозы пожара.',
+      important: true,
+    },
+    {
+      step: 4,
+      title: 'Подробная фото- и видеофиксация',
+      description: 'Снимите общий план с привязкой к домам и знакам, взаимное положение ТС, следы торможения, повреждения и номера всех участников ДТП крупным планом.',
+      important: false,
+    },
+    {
+      step: 5,
+      title: 'Европротокол или инспекторы ГИБДД',
+      description: 'Если участвуют только 2 авто, нет пострадавших и у обоих ОСАГО — оформите европротокол через приложение «Госуслуги Авто» (выплата до 400 000 ₽). При разногласиях вызывайте ГИБДД через 112.',
+      important: false,
+    },
+    {
+      step: 6,
+      title: 'Звонок в страховую компанию',
+      description: 'Позвоните на бесплатную горячую линию вашей страховой компании и зарегистрируйте страховой случай по ОСАГО/КАСКО.',
+      important: false,
+    },
+  ],
+};
+
+// ==================== SOS: МЕДИЦИНСКИЕ ДАННЫЕ СЕМЬИ ====================
+export const INITIAL_MEDICAL_EMERGENCY: MedicalMemberInfo[] = [
+  {
+    memberId: 'member-1',
+    name: 'Ольга',
+    role: 'Мама • Владелец',
+    bloodType: 'II (A) Rh+ (вторая положительная)',
+    allergies: ['Пенициллин и антибиотики пенициллинового ряда (риск отёка Квинке)', 'Шерсть животных (легкий ринит)'],
+    chronicConditions: ['Гипотиреоз (компенсированный)'],
+    currentMedications: ['L-тироксин 50 мкг (утром натощак)'],
+    emergencyContactPhone: '+7 (916) 123-45-67',
+  },
+  {
+    memberId: 'member-2',
+    name: 'Сергей',
+    role: 'Папа • Взрослый',
+    bloodType: 'I (0) Rh+ (первая положительная)',
+    allergies: ['Цитрусовые (крапивница при превышении нормы)'],
+    chronicConditions: ['Хронических диагнозов нет'],
+    currentMedications: ['Постоянных препаратов нет'],
+    emergencyContactPhone: '+7 (916) 987-65-43',
+  },
+  {
+    memberId: 'member-3',
+    name: 'Артём',
+    role: 'Сын • 11 лет',
+    bloodType: 'II (A) Rh+ (вторая положительная)',
+    allergies: ['Лекарственных аллергий не выявлено'],
+    chronicConditions: ['Здоров'],
+    currentMedications: ['Витамин D3 (детримакс 1000 МЕ)'],
+    emergencyContactPhone: '+7 (916) 123-45-67',
+  },
+  {
+    memberId: 'member-4',
+    name: 'София',
+    role: 'Дочь • 7 лет',
+    bloodType: 'I (0) Rh+ (первая положительная)',
+    allergies: ['Цветение берёзы (сезонный поллиноз май, принимать Зодак/Супрастин)'],
+    chronicConditions: ['Аденоиды 1 ст.'],
+    currentMedications: ['Аква Марис спрей при заложенности'],
+    emergencyContactPhone: '+7 (916) 123-45-67',
+  },
+];
+
 
 

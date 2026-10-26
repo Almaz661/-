@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Pill,
   Search,
@@ -539,6 +539,41 @@ const MedicineModal: React.FC<MedicineModalProps> = ({
   const [location, setLocation] = useState(medicine?.location || 'Аптечка в коридоре');
   const [isLow, setIsLow] = useState(medicine?.isLow || false);
   const [notes, setNotes] = useState(medicine?.notes || '');
+
+  // Синхронизация состояния полей при открытии или смене препарата
+  useEffect(() => {
+    if (isOpen) {
+      if (medicine) {
+        setName(medicine.name || '');
+        setActiveSubstance(medicine.activeSubstance || '');
+        setCategory(medicine.category || 'fever');
+        setForm(medicine.form || 'pills');
+        setDosage(medicine.dosage || '');
+        setInstructions(medicine.instructions || '');
+        setForWhom(medicine.forWhom || 'Вся семья');
+        setExpiryDate(medicine.expiryDate || '2027-12-31');
+        setOpenedDate(medicine.openedDate || '');
+        setQuantity(medicine.quantity || '1 упаковка');
+        setLocation(medicine.location || 'Аптечка в коридоре');
+        setIsLow(medicine.isLow || false);
+        setNotes(medicine.notes || '');
+      } else {
+        setName('');
+        setActiveSubstance('');
+        setCategory('fever');
+        setForm('pills');
+        setDosage('');
+        setInstructions('');
+        setForWhom('Вся семья');
+        setExpiryDate('2027-12-31');
+        setOpenedDate('');
+        setQuantity('1 упаковка');
+        setLocation('Аптечка в коридоре');
+        setIsLow(false);
+        setNotes('');
+      }
+    }
+  }, [isOpen, medicine]);
 
   if (!isOpen) return null;
 

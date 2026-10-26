@@ -49,6 +49,9 @@ export interface CityLocation {
 }
 
 export const POPULAR_CITIES: CityLocation[] = [
+  { id: 'ath', name: 'Афины', country: 'Греция', latitude: 37.9838, longitude: 23.7275 },
+  { id: 'skg', name: 'Салоники', country: 'Греция', latitude: 40.6401, longitude: 22.9444 },
+  { id: 'her', name: 'Ираклион', country: 'Греция (Крит)', latitude: 35.3387, longitude: 25.1442 },
   { id: 'ams', name: 'Амстердам', country: 'Нидерланды', latitude: 52.374, longitude: 4.89 },
   { id: 'ber', name: 'Берлин', country: 'Германия', latitude: 52.52, longitude: 13.405 },
   { id: 'mow', name: 'Москва', country: 'Россия', latitude: 55.7558, longitude: 37.6173 },

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Calendar, Clock, MapPin, Tag } from 'lucide-react';
 import { useHousehold } from '../../context/HouseholdContext';
 import { CalendarEvent, EventCategory } from '../../types';
@@ -42,6 +42,35 @@ export const EventModal: React.FC<EventModalProps> = ({
   );
   const [location, setLocation] = useState(eventToEdit?.location || '');
   const [reminderMinutes, setReminderMinutes] = useState(eventToEdit?.reminderMinutes || 60);
+
+  // Синхронизация состояния формы при открытии модального окна или смене события
+  useEffect(() => {
+    if (isOpen) {
+      if (eventToEdit) {
+        setTitle(eventToEdit.title || '');
+        setDescription(eventToEdit.description || '');
+        setDate(eventToEdit.date || new Date().toISOString().split('T')[0]);
+        setStartTime(eventToEdit.startTime || '12:00');
+        setEndTime(eventToEdit.endTime || '13:00');
+        setAllDay(eventToEdit.allDay || false);
+        setCategory(eventToEdit.category || 'family');
+        setMemberIds(eventToEdit.memberIds || members.map((m) => m.id));
+        setLocation(eventToEdit.location || '');
+        setReminderMinutes(eventToEdit.reminderMinutes || 60);
+      } else {
+        setTitle('');
+        setDescription('');
+        setDate(initialDate || new Date().toISOString().split('T')[0]);
+        setStartTime('12:00');
+        setEndTime('13:00');
+        setAllDay(false);
+        setCategory('family');
+        setMemberIds(members.map((m) => m.id));
+        setLocation('');
+        setReminderMinutes(60);
+      }
+    }
+  }, [isOpen, eventToEdit, initialDate, members]);
 
   if (!isOpen) return null;
 
@@ -87,7 +116,7 @@ export const EventModal: React.FC<EventModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs select-none animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-150">
       <div className="w-full max-w-lg bg-[#FCFBF8] rounded-3xl border border-[#EBE7DF] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         <div className="px-6 py-4 border-b border-[#EBE7DF] flex items-center justify-between bg-white">
           <h3 className="text-base font-bold text-[#1F1D1A]">

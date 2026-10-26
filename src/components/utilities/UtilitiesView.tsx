@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Gauge,
   Droplets,
@@ -18,6 +18,8 @@ import {
   FileSpreadsheet,
   ArrowUpRight,
   Calculator,
+  Info,
+  Sparkles,
 } from 'lucide-react';
 import {
   BarChart,
@@ -54,6 +56,37 @@ const METER_TYPE_LABELS: Record<UtilityMeterType, string> = {
   heating: 'Отопление / Теплосчётчик',
 };
 
+// Реалистичные типичные тарифы по регионам (ЕС, РФ, США) для быстрого предзаполнения
+const TYPICAL_TARIFFS: Record<'₽' | '€' | '$', Record<UtilityMeterType, number>> = {
+  '€': {
+    cold_water: 1.45,
+    hot_water: 4.8,
+    electricity_day: 0.22,
+    electricity_night: 0.14,
+    electricity_single: 0.2,
+    gas: 0.85,
+    heating: 35.0,
+  },
+  '₽': {
+    cold_water: 50.93,
+    hot_water: 243.16,
+    electricity_day: 7.85,
+    electricity_night: 2.98,
+    electricity_single: 6.43,
+    gas: 7.2,
+    heating: 2650.0,
+  },
+  '$': {
+    cold_water: 1.6,
+    hot_water: 5.1,
+    electricity_day: 0.18,
+    electricity_night: 0.11,
+    electricity_single: 0.16,
+    gas: 0.95,
+    heating: 38.0,
+  },
+};
+
 export const UtilitiesView: React.FC = () => {
   const {
     meters,
@@ -75,6 +108,55 @@ export const UtilitiesView: React.FC = () => {
   const [selectedTab, setSelectedTab] = useState<'current' | 'analytics' | 'meters'>('current');
   const [isAddMeterModalOpen, setIsAddMeterModalOpen] = useState(false);
   const [editingMeter, setEditingMeter] = useState<UtilityMeter | null>(null);
+
+  // Валюта расчёта коммунальных услуг (₽ / € / $)
+  const [currencySymbol, setCurrencySymbol] = useState<'₽' | '€' | '$'>(() => {
+    try {
+      const saved = localStorage.getItem('onehaus_utility_currency');
+      if (saved === '€' || saved === '$' || saved === '₽') return saved;
+    } catch (_) {}
+    return '₽';
+  });
+
+  // Применение пресетов тарифов для выбранной валюты
+  const applyTariffPreset = (targetCurrency: '₽' | '€' | '$', showToastMsg = true) => {
+    meters.forEach((m) => {
+      const presetRate = TYPICAL_TARIFFS[targetCurrency][m.type];
+      if (presetRate !== undefined) {
+        updateMeter(m.id, { tariffRate: presetRate });
+      }
+    });
+    if (showToastMsg) {
+      showToast(
+        targetCurrency === '€'
+          ? 'Применены европейские тарифы (€): вода 1.45 €, свет 0.22 €'
+          : targetCurrency === '₽'
+          ? 'Применены российские тарифы (₽): вода 50.93 ₽, свет 7.85 ₽'
+          : 'Применены стандартные тарифы ($)',
+        'success'
+      );
+    }
+  };
+
+  const handleCurrencyChange = (sym: '₽' | '€' | '$') => {
+    setCurrencySymbol(sym);
+    try {
+      localStorage.setItem('onehaus_utility_currency', sym);
+    } catch (_) {}
+
+    // Авто-адаптация при переключении: если перешли на €, а тарифы были рублёвыми (>10)
+    const coldWater = meters.find((m) => m.type === 'cold_water');
+    if (sym === '€' && coldWater && coldWater.tariffRate > 10) {
+      applyTariffPreset('€', false);
+      showToast('Валюта переключена на Евро (€). Применены европейские тарифы (вода 1.45 €, свет 0.22 €).', 'info');
+    } else if (sym === '₽' && coldWater && coldWater.tariffRate < 10) {
+      applyTariffPreset('₽', false);
+      showToast('Валюта переключена на Рубли (₽). Применены российские тарифы.', 'info');
+    } else if (sym === '$' && coldWater && coldWater.tariffRate > 10) {
+      applyTariffPreset('$', false);
+      showToast('Валюта переключена на Доллары ($). Применены стандартные тарифы.', 'info');
+    }
+  };
 
   // Проверка статуса подачи показаний за текущий месяц
   const currentMonthStatus = useMemo(() => {
@@ -201,7 +283,7 @@ export const UtilitiesView: React.FC = () => {
           <div className="space-y-1">
             <span className="text-xs font-semibold text-[#8C867D]">Расход по тарифам (Октябрь)</span>
             <div className="text-2xl font-black text-[#1F1E1C]">
-              {currentMonthStatus.totalCostThisMonth.toLocaleString('ru-RU')} ₽
+              {currentMonthStatus.totalCostThisMonth.toLocaleString('ru-RU')} {currencySymbol}
             </div>
             <p className="text-[11px] text-[#8C867D]">
               Вода, электричество Т1/Т2 и тепло
@@ -227,69 +309,130 @@ export const UtilitiesView: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Навигационные вкладки режима: Текущие показания / Графики / Настройка счётчиков */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-[#E8E2D4]">
-        <div className="flex items-center space-x-1.5">
+      {/* Баннер предупреждения, если при переключении на Евро остались рублёвые демо-ставки */}
+      {currencySymbol === '€' && meters.some((m) => m.type === 'cold_water' && m.tariffRate > 10) && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-amber-900 shadow-xs">
+          <div className="flex items-center space-x-3">
+            <span className="text-xl">💶</span>
+            <div>
+              <strong className="block font-bold text-sm">Тарифы в евро пока не скорректированы ({meters.find((m) => m.type === 'cold_water')?.tariffRate} €/м³)</strong>
+              <span className="text-amber-800">
+                Здесь остались исходные рублёвые цифры (из-за чего набежало 5 023 €). Нажмите кнопку, чтобы применить реальные ставки ЕС (~1.45 € за воду, ~0.22 € за свет), или отредактируйте каждый счётчик вручную.
+              </span>
+            </div>
+          </div>
           <button
             type="button"
-            onClick={() => setSelectedTab('current')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              selectedTab === 'current'
-                ? 'bg-[#E15A42] text-white shadow-xs'
-                : 'text-[#5C564B] hover:bg-[#F2EFE9]'
-            }`}
+            onClick={() => applyTariffPreset('€', true)}
+            className="px-4 py-2 bg-[#E15A42] hover:bg-[#D04E37] text-white font-bold rounded-xl shrink-0 transition-colors cursor-pointer shadow-xs"
           >
-            Ввод показаний за Октябрь
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelectedTab('analytics')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              selectedTab === 'analytics'
-                ? 'bg-[#E15A42] text-white shadow-xs'
-                : 'text-[#5C564B] hover:bg-[#F2EFE9]'
-            }`}
-          >
-            Графики расхода (6 мес.)
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelectedTab('meters')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              selectedTab === 'meters'
-                ? 'bg-[#E15A42] text-white shadow-xs'
-                : 'text-[#5C564B] hover:bg-[#F2EFE9]'
-            }`}
-          >
-            Мои счётчики и тарифы ({meters.length})
+            Применить тарифы ЕС (€)
           </button>
         </div>
+      )}
 
-        <div className="flex items-center space-x-2">
+      {/* 2. Навигационные вкладки режима: Текущие показания / Графики / Настройка счётчиков */}
+      <div className="space-y-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-[#E8E2D4]">
+          <div className="flex items-center space-x-1.5 flex-wrap gap-y-1">
+            <button
+              type="button"
+              onClick={() => setSelectedTab('current')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                selectedTab === 'current'
+                  ? 'bg-[#E15A42] text-white shadow-xs'
+                  : 'text-[#5C564B] hover:bg-[#F2EFE9]'
+              }`}
+            >
+              Ввод показаний за Октябрь
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedTab('analytics')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                selectedTab === 'analytics'
+                  ? 'bg-[#E15A42] text-white shadow-xs'
+                  : 'text-[#5C564B] hover:bg-[#F2EFE9]'
+              }`}
+            >
+              Графики расхода (6 мес.)
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedTab('meters')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                selectedTab === 'meters'
+                  ? 'bg-[#E15A42] text-white shadow-xs'
+                  : 'text-[#5C564B] hover:bg-[#F2EFE9]'
+              }`}
+            >
+              Мои счётчики и тарифы ({meters.length})
+            </button>
+          </div>
+
+          <div className="flex items-center space-x-2 flex-wrap gap-y-2">
+            {/* Переключатель валюты коммуналки */}
+            <div className="flex items-center bg-[#FAF7F2] p-1 rounded-xl border border-[#DDD7CB]">
+              {(['₽', '€', '$'] as const).map((sym) => (
+                <button
+                  key={sym}
+                  type="button"
+                  onClick={() => handleCurrencyChange(sym)}
+                  className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                    currencySymbol === sym
+                      ? 'bg-[#E15A42] text-white shadow-2xs'
+                      : 'text-[#6B6456] hover:text-[#1F1E1C]'
+                  }`}
+                  title={`Установить валюту тарифов: ${sym}`}
+                >
+                  {sym}
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={handleCopySummary}
+              className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-[#FAF7F2] hover:bg-[#EFEAE0] border border-[#DDD7CB] text-[#1F1E1C] text-xs font-semibold transition-all cursor-pointer shadow-2xs"
+              title="Скопировать текст показаний для отправки в УК или бот"
+            >
+              {copiedSuccess ? (
+                <Check className="w-3.5 h-3.5 text-emerald-600" />
+              ) : (
+                <Copy className="w-3.5 h-3.5 text-[#E15A42]" />
+              )}
+              <span>{copiedSuccess ? 'Скопировано!' : 'Скопировать для УК'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setEditingMeter(null);
+                setIsAddMeterModalOpen(true);
+              }}
+              className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-[#1F1E1C] hover:bg-black text-white text-xs font-bold transition-all cursor-pointer shadow-2xs"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Счётчик</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Подсказка о тарифах */}
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 bg-[#FAF7F2] rounded-xl border border-[#EDE7DB] text-[11px] text-[#6B6456]">
+          <div className="flex items-center space-x-1.5">
+            <Info className="w-3.5 h-3.5 text-[#E15A42] shrink-0" />
+            <span>
+              <strong>Как работают тарифы:</strong> Каждая семья вводит ставки из своей квитанции (ΔΕΗ/ΕΥΔΑΠ в Греции, Мосэнерго в РФ). Нажмите на плашку тарифа ✏️ на карточке для ввода своих цифр.
+            </span>
+          </div>
           <button
             type="button"
-            onClick={handleCopySummary}
-            className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-[#FAF7F2] hover:bg-[#EFEAE0] border border-[#DDD7CB] text-[#1F1E1C] text-xs font-semibold transition-all cursor-pointer shadow-2xs"
-            title="Скопировать текст показаний для отправки в УК или бот"
+            onClick={() => applyTariffPreset(currencySymbol, true)}
+            className="text-[#E15A42] hover:underline font-semibold flex items-center space-x-1 cursor-pointer"
           >
-            {copiedSuccess ? (
-              <Check className="w-3.5 h-3.5 text-emerald-600" />
-            ) : (
-              <Copy className="w-3.5 h-3.5 text-[#E15A42]" />
-            )}
-            <span>{copiedSuccess ? 'Скопировано!' : 'Скопировать для УК'}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setEditingMeter(null);
-              setIsAddMeterModalOpen(true);
-            }}
-            className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-[#1F1E1C] hover:bg-black text-white text-xs font-bold transition-all cursor-pointer shadow-2xs"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Счётчик</span>
+            <Sparkles className="w-3 h-3" />
+            <span>Типичные тарифы {currencySymbol === '€' ? 'ЕС (€)' : currencySymbol === '₽' ? 'РФ (₽)' : '($)'}</span>
           </button>
         </div>
       </div>
@@ -336,9 +479,19 @@ export const UtilitiesView: React.FC = () => {
                       </div>
                     </div>
 
-                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-stone-100 text-stone-700">
-                      {meter.tariffRate} ₽/{meter.unit}
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingMeter(meter);
+                        setIsAddMeterModalOpen(true);
+                      }}
+                      className="flex items-center space-x-1.5 text-xs font-bold px-2.5 py-1 rounded-xl bg-[#FAF7F2] hover:bg-[#E15A42]/10 hover:text-[#E15A42] text-[#4A453C] border border-[#DDD7CB] transition-all cursor-pointer shadow-2xs group shrink-0"
+                      title="Нажмите, чтобы ввести свой тариф для этого счётчика"
+                    >
+                      <span className="text-[10px] text-[#8C867D] group-hover:text-[#E15A42]">Тариф:</span>
+                      <span>{meter.tariffRate} {currencySymbol}/{meter.unit}</span>
+                      <Edit2 className="w-3 h-3 text-[#E15A42] shrink-0" />
+                    </button>
                   </div>
 
                   {/* Блок значений: Прошлое, Новое, Расход */}
@@ -370,7 +523,7 @@ export const UtilitiesView: React.FC = () => {
                     <div>
                       <span className="text-[10px] text-[#8C867D] block">Начисление по тарифу:</span>
                       <strong className="text-sm font-bold text-[#1F1E1C]">
-                        {curReading?.cost ? `${curReading.cost.toLocaleString('ru-RU')} ₽` : '0 ₽'}
+                        {curReading?.cost ? `${curReading.cost.toLocaleString('ru-RU')} ${currencySymbol}` : `0 ${currencySymbol}`}
                       </strong>
                     </div>
 
@@ -429,7 +582,7 @@ export const UtilitiesView: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <h4 className="font-bold text-base text-[#1F1E1C]">
-                  Динамика расходов на ресурсы (₽ в месяц)
+                  Динамика расходов на ресурсы ({currencySymbol} в месяц)
                 </h4>
                 <p className="text-xs text-[#8C867D]">
                   Суммарная стоимость воды, электроэнергии и тепла за последние полгода
@@ -452,9 +605,9 @@ export const UtilitiesView: React.FC = () => {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#F0ECE1" />
                   <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#8C867D' }} />
-                  <YAxis tick={{ fontSize: 11, fill: '#8C867D' }} unit=" ₽" />
+                  <YAxis tick={{ fontSize: 11, fill: '#8C867D' }} unit={` ${currencySymbol}`} />
                   <Tooltip
-                    formatter={(val: any) => [`${val.toLocaleString('ru-RU')} ₽`, 'Начислено']}
+                    formatter={(val: any) => [`${val.toLocaleString('ru-RU')} ${currencySymbol}`, 'Начислено']}
                     contentStyle={{ backgroundColor: '#FAF7F2', borderRadius: '1rem', border: '1px solid #E5DFD3' }}
                   />
                   <Area
@@ -565,7 +718,7 @@ export const UtilitiesView: React.FC = () => {
                     <div>
                       <span className="text-[#8C867D] block text-[10px]">Тариф:</span>
                       <strong className="text-[#1F1E1C]">
-                        {meter.tariffRate} ₽ / {meter.unit}
+                        {meter.tariffRate} {currencySymbol} / {meter.unit}
                       </strong>
                     </div>
                     <div>
@@ -595,7 +748,7 @@ export const UtilitiesView: React.FC = () => {
                             </span>
                           </div>
                           <div className="flex items-center space-x-2">
-                            <span className="font-bold text-[#1F1E1C]">{r.cost || 0} ₽</span>
+                            <span className="font-bold text-[#1F1E1C]">{r.cost || 0} {currencySymbol}</span>
                             <span
                               className={`w-2 h-2 rounded-full ${
                                 r.submitted ? 'bg-emerald-500' : 'bg-amber-400'
@@ -619,6 +772,7 @@ export const UtilitiesView: React.FC = () => {
         <MeterModal
           isOpen={isAddMeterModalOpen}
           meter={editingMeter}
+          currencySymbol={currencySymbol}
           onClose={() => setIsAddMeterModalOpen(false)}
           onSave={(data) => {
             if (editingMeter) {
@@ -641,11 +795,12 @@ export const UtilitiesView: React.FC = () => {
 interface MeterModalProps {
   isOpen: boolean;
   meter: UtilityMeter | null;
+  currencySymbol?: string;
   onClose: () => void;
   onSave: (data: Omit<UtilityMeter, 'id' | 'readings'>) => void;
 }
 
-const MeterModal: React.FC<MeterModalProps> = ({ isOpen, meter, onClose, onSave }) => {
+const MeterModal: React.FC<MeterModalProps> = ({ isOpen, meter, currencySymbol = '₽', onClose, onSave }) => {
   const [name, setName] = useState(meter?.name || '');
   const [type, setType] = useState<UtilityMeterType>(meter?.type || 'cold_water');
   const [serialNumber, setSerialNumber] = useState(meter?.serialNumber || '');
@@ -654,6 +809,31 @@ const MeterModal: React.FC<MeterModalProps> = ({ isOpen, meter, onClose, onSave 
   const [tariffRate, setTariffRate] = useState(meter?.tariffRate ? String(meter.tariffRate) : '50.93');
   const [verificationDate, setVerificationDate] = useState(meter?.verificationDate || '2028-12-31');
   const [initialValue, setInitialValue] = useState(meter?.initialValue ? String(meter.initialValue) : '0');
+
+  // Синхронизация состояния полей при открытии или смене счётчика
+  useEffect(() => {
+    if (isOpen) {
+      if (meter) {
+        setName(meter.name || '');
+        setType(meter.type || 'cold_water');
+        setSerialNumber(meter.serialNumber || '');
+        setLocation(meter.location || 'Санузел');
+        setUnit(meter.unit || 'м³');
+        setTariffRate(meter.tariffRate ? String(meter.tariffRate) : '50.93');
+        setVerificationDate(meter.verificationDate || '2028-12-31');
+        setInitialValue(meter.initialValue ? String(meter.initialValue) : '0');
+      } else {
+        setName('');
+        setType('cold_water');
+        setSerialNumber('');
+        setLocation('Санузел');
+        setUnit('м³');
+        setTariffRate('50.93');
+        setVerificationDate('2028-12-31');
+        setInitialValue('0');
+      }
+    }
+  }, [isOpen, meter]);
 
   if (!isOpen) return null;
 
@@ -741,16 +921,17 @@ const MeterModal: React.FC<MeterModalProps> = ({ isOpen, meter, onClose, onSave 
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="font-semibold text-[#1F1E1C]">Тариф (₽ за единицу)</label>
+              <label className="font-semibold text-[#1F1E1C]">Тариф ({currencySymbol} за {unit || 'ед.'})</label>
               <input
                 type="number"
                 step="any"
                 required
                 value={tariffRate}
                 onChange={(e) => setTariffRate(e.target.value)}
-                placeholder="50.93"
+                placeholder={currencySymbol === '€' ? '1.45' : '50.93'}
                 className="w-full px-3 py-2 bg-white border border-[#DDD7CB] rounded-xl focus:outline-none focus:border-[#E15A42]"
               />
+              <p className="text-[10px] text-[#8C867D]">Ставка из квитанции за 1 {unit}</p>
             </div>
             <div className="space-y-1">
               <label className="font-semibold text-[#1F1E1C]">Заводской номер</label>

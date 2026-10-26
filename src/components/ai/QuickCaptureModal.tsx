@@ -21,9 +21,14 @@ import { ParsedAIResponse } from '../../types';
 interface QuickCaptureModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialVoice?: boolean;
 }
 
-export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({ isOpen, onClose }) => {
+export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
+  isOpen,
+  onClose,
+  initialVoice = false,
+}) => {
   const {
     members,
     addTask,
@@ -39,7 +44,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({ isOpen, on
   const [imageBase64, setImageBase64] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState('');
-  const [speechLang, setSpeechLang] = useState<'ru-RU' | 'en-US' | 'de-DE'>('ru-RU');
+  const [speechLang, setSpeechLang] = useState<'ru-RU' | 'en-US' | 'de-DE' | 'el-GR'>('ru-RU');
   const [speechError, setSpeechError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [parsedResult, setParsedResult] = useState<ParsedAIResponse | null>(null);
@@ -53,12 +58,17 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({ isOpen, on
     typeof window !== 'undefined' &&
     !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
 
-  // Остановка распознавания при закрытии модального окна
+  // Остановка или запуск распознавания
   useEffect(() => {
     if (!isOpen && isListening) {
       stopListening();
+    } else if (isOpen && initialVoice && !isListening) {
+      const timer = setTimeout(() => {
+        startListening();
+      }, 300);
+      return () => clearTimeout(timer);
     }
-  }, [isOpen]);
+  }, [isOpen, initialVoice]);
 
   // Очистка при размонтировании
   useEffect(() => {
@@ -295,7 +305,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({ isOpen, on
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs select-none animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-150">
       <div className="w-full max-w-2xl bg-[#FCFBF8] rounded-3xl border border-[#EBE7DF] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Заголовок модалки */}
         <div className="px-6 py-5 border-b border-[#EBE7DF] flex items-center justify-between bg-gradient-to-r from-[#FAF7F0] to-[#F5F1E6]">
@@ -454,7 +464,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({ isOpen, on
 
                 {/* Выбор языка распознавания речи */}
                 <div className="flex items-center space-x-1 bg-white p-1 rounded-xl border border-[#E3DFD5]">
-                  {(['ru-RU', 'en-US', 'de-DE'] as const).map((lang) => (
+                  {(['ru-RU', 'en-US', 'de-DE', 'el-GR'] as const).map((lang) => (
                     <button
                       key={lang}
                       type="button"
@@ -471,7 +481,13 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({ isOpen, on
                           : 'text-[#8A8477] hover:text-[#1F1D1A]'
                       }`}
                       title={`Язык распознавания: ${
-                        lang === 'ru-RU' ? 'Русский' : lang === 'en-US' ? 'English' : 'Deutsch'
+                        lang === 'ru-RU'
+                          ? 'Русский'
+                          : lang === 'en-US'
+                          ? 'English'
+                          : lang === 'de-DE'
+                          ? 'Deutsch'
+                          : 'Ελληνικά (Греческий)'
                       }`}
                     >
                       {lang.slice(0, 2).toUpperCase()}

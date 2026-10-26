@@ -8,6 +8,8 @@ import {
   Check,
   Calendar,
   UtensilsCrossed,
+  Edit2,
+  Trash2,
 } from 'lucide-react';
 import { useHousehold } from '../../context/HouseholdContext';
 import { Recipe } from '../../types';
@@ -16,12 +18,16 @@ interface RecipeDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   recipe: Recipe | null;
+  onEdit?: (recipe: Recipe) => void;
+  onDelete?: (recipeId: string) => void;
 }
 
 export const RecipeDetailModal: React.FC<RecipeDetailModalProps> = ({
   isOpen,
   onClose,
   recipe,
+  onEdit,
+  onDelete,
 }) => {
   const { importRecipeIngredientsToShopping, shoppingLists, updateMealSlot, showToast } =
     useHousehold();
@@ -34,6 +40,7 @@ export const RecipeDetailModal: React.FC<RecipeDetailModalProps> = ({
   );
   const [selectedSlot, setSelectedSlot] = useState<'breakfast' | 'lunch' | 'dinner' | 'snack'>('dinner');
   const [isAddingToPlan, setIsAddingToPlan] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   if (!isOpen || !recipe) return null;
 
@@ -51,7 +58,7 @@ export const RecipeDetailModal: React.FC<RecipeDetailModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs select-none animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
       <div className="w-full max-w-2xl bg-[#FCFBF8] rounded-3xl border border-[#EBE7DF] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Заголовок с картинкой */}
         <div className="relative h-56 bg-stone-100 overflow-hidden shrink-0">
@@ -62,12 +69,39 @@ export const RecipeDetailModal: React.FC<RecipeDetailModalProps> = ({
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
 
-          <button
-            onClick={onClose}
-            className="absolute top-4 right-4 p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          {/* Верхняя панель действий: Редактировать, Удалить, Закрыть */}
+          <div className="absolute top-4 right-4 flex items-center space-x-2">
+            {onEdit && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onEdit(recipe);
+                }}
+                className="flex items-center space-x-1 px-3 py-1.5 rounded-full bg-black/50 hover:bg-black/75 text-white text-xs font-semibold backdrop-blur-xs transition-colors cursor-pointer"
+                title="Редактировать рецепт"
+              >
+                <Edit2 className="w-3.5 h-3.5" />
+                <span>Изменить</span>
+              </button>
+            )}
+            {onDelete && (
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(true)}
+                className="p-2 rounded-full bg-black/50 hover:bg-rose-600/80 text-white backdrop-blur-xs transition-colors cursor-pointer"
+                title="Удалить рецепт"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-2 rounded-full bg-black/50 hover:bg-black/75 text-white backdrop-blur-xs transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
 
           <div className="absolute bottom-4 left-6 right-6 text-white">
             <div className="flex flex-wrap gap-1.5 mb-1.5">
@@ -214,6 +248,46 @@ export const RecipeDetailModal: React.FC<RecipeDetailModalProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Модальное окно подтверждения удаления рецепта */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 border border-[#E5DFD3] shadow-2xl space-y-4 animate-in zoom-in-95">
+            <div className="flex items-center space-x-3 text-rose-600">
+              <div className="w-10 h-10 rounded-2xl bg-rose-100 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-bold text-sm text-[#1F1E1C]">Удалить рецепт?</h4>
+                <p className="text-xs text-[#8C867D]">«{recipe.title}»</p>
+              </div>
+            </div>
+            <p className="text-xs text-[#5C564B]">
+              Рецепт будет безвозвратно удален из вашей семейной книги.
+            </p>
+            <div className="flex items-center justify-end space-x-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-[#5C564B] hover:bg-stone-100 transition-colors"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  onClose();
+                  if (onDelete) onDelete(recipe.id);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white transition-colors"
+              >
+                Удалить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

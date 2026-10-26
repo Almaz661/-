@@ -134,7 +134,7 @@ export const CalendarView: React.FC = () => {
   const todayStr = new Date().toISOString().split('T')[0];
 
   return (
-    <div className="p-8 space-y-6 max-w-7xl mx-auto select-none">
+    <div className="p-8 space-y-6 max-w-7xl mx-auto">
       {/* Верхняя строка управления календарем */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         {/* Навигация и заголовок месяца */}

@@ -114,7 +114,7 @@ export const ShoppingView: React.FC = () => {
       : 0;
 
   return (
-    <div className="p-8 space-y-6 max-w-7xl mx-auto select-none">
+    <div className="p-8 space-y-6 max-w-7xl mx-auto">
       {/* Верхний ряд: Списки покупок в виде табов */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center space-x-2 overflow-x-auto pb-1">
