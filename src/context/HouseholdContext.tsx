@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import {
   CalendarEvent,
   DocumentItem,
@@ -21,6 +21,8 @@ import {
   PetEmergencyInfo,
   AccidentGuidance,
   MedicalMemberInfo,
+  CloudSyncStatus,
+  AppModuleId,
 } from '../types';
 import {
   INITIAL_CONTACTS,
@@ -56,6 +58,8 @@ import {
   OfflineDbStats,
 } from '../services/offlineDatabase';
 import { normalizeProductTitle } from '../utils/receiptNormalizer';
+import { parseShoppingInput } from '../utils/shoppingParser';
+import { recalculateMeterReadings, getPreviousReadingForMeter } from '../utils/utilityCalculations';
 
 interface ToastMessage {
   id: string;
@@ -96,11 +100,16 @@ interface HouseholdContextType {
   setActiveShoppingListId: (id: string) => void;
   shoppingItems: ShoppingItem[];
   addShoppingItem: (item: Omit<ShoppingItem, 'id' | 'createdAt'>) => void;
+  addShoppingItems: (items: Array<Omit<ShoppingItem, 'id' | 'createdAt'>>) => void;
   toggleShoppingItem: (id: string) => void;
   deleteShoppingItem: (id: string) => void;
   clearCompletedShoppingItems: (listId: string) => void;
   addShoppingList: (name: string, icon: string) => void;
-  importRecipeIngredientsToShopping: (recipe: Recipe, targetListId?: string) => void;
+  importRecipeIngredientsToShopping: (
+    recipe: Recipe | Omit<Recipe, 'id'>,
+    targetListId?: string,
+    selectedIngredientIndices?: number[]
+  ) => void;
 
   // Meals & Recipes
   recipes: Recipe[];
@@ -160,7 +169,15 @@ interface HouseholdContextType {
   updateMeter: (id: string, updates: Partial<UtilityMeter>) => void;
   deleteMeter: (id: string) => void;
   addMeterReading: (meterId: string, value: number, date?: string, notes?: string) => void;
+  deleteMeterReading: (meterId: string, readingId: string) => void;
+  updateMeterReading: (meterId: string, readingId: string, updates: Partial<UtilityReading>) => void;
   toggleReadingSubmitted: (meterId: string, readingId: string) => void;
+  clearMeterReadings: (meterId?: string) => void;
+  resetMetersToZero: () => void;
+  resetMetersToInitial: () => void;
+  clearShoppingItems: (onlyCompleted?: boolean) => void;
+  clearTasks: (onlyCompleted?: boolean) => void;
+  clearAllLocalStorageData: () => void;
 
   // Objects & Property Management (Объекты семьи)
   properties: HouseholdProperty[];
@@ -188,6 +205,19 @@ interface HouseholdContextType {
   importBackupJson: (jsonString: string) => boolean;
   resetToDefaultData: () => void;
 
+  // Family Cloud Sync (Облачная семейная синхронизация)
+  familyCode: string | null;
+  cloudSyncStatus: CloudSyncStatus;
+  lastCloudSync: string | null;
+  connectFamilyCode: (code: string) => Promise<boolean>;
+  generateNewFamilyCode: () => Promise<string>;
+  disconnectFamilyCode: () => void;
+  syncWithCloud: () => Promise<boolean>;
+
+  // Module Visibility (Кастомизация меню и дашборда)
+  visibleModules: Record<AppModuleId, boolean>;
+  toggleModuleVisibility: (id: AppModuleId) => void;
+
   // Toasts
   toasts: ToastMessage[];
   showToast: (message: string, type?: 'success' | 'info' | 'warning' | 'error') => void;
@@ -195,6 +225,21 @@ interface HouseholdContextType {
 }
 
 const HouseholdContext = createContext<HouseholdContextType | undefined>(undefined);
+
+export const DEFAULT_VISIBLE_MODULES: Record<AppModuleId, boolean> = {
+  dashboard: true,
+  tasks: true,
+  calendar: true,
+  shopping: true,
+  meals: true,
+  utilities: true,
+  receipts: true,
+  firstaid: true,
+  inventory: true,
+  docs: false,
+  contacts: false,
+  settings: true,
+};
 
 const STORAGE_PREFIX = 'onehaus_v4_';
 
@@ -369,6 +414,118 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [recipes, setRecipes] = useLocalStorage<Recipe[]>('recipes', INITIAL_RECIPES);
   const [mealPlan, setMealPlan] = useLocalStorage<MealPlanDay[]>('meal_plan', INITIAL_MEAL_PLAN);
 
+  // Автоматическое разделение объединенных ингредиентов в списке покупок (базилик и черри, соль и травы и т.д.)
+  useEffect(() => {
+    setShoppingItems((prev) => {
+      let needsSplit = false;
+      const updated: ShoppingItem[] = [];
+
+      prev.forEach((item) => {
+        const t = (item.title || '').trim().toLowerCase();
+        if (t === 'свежий базилик и черри' || t === 'базилик и черри' || t === 'базилик и помидоры черри') {
+          needsSplit = true;
+          updated.push({
+            ...item,
+            id: item.id + '-basil',
+            title: 'Свежий базилик',
+            quantity: '1 пучок',
+            category: 'produce',
+          });
+          updated.push({
+            ...item,
+            id: item.id + '-cherry',
+            title: 'Помидоры черри',
+            quantity: '250 г',
+            category: 'produce',
+          });
+        } else if (t === 'морская соль и прованские травы' || t === 'соль и прованские травы') {
+          needsSplit = true;
+          updated.push({
+            ...item,
+            id: item.id + '-salt',
+            title: 'Морская соль',
+            quantity: 'по вкусу',
+            category: 'pantry',
+          });
+          updated.push({
+            ...item,
+            id: item.id + '-herbs',
+            title: 'Прованские травы',
+            quantity: '1 ч. л.',
+            category: 'pantry',
+          });
+        } else if (t === 'морковь и лук репчатый' || t === 'морковь и лук') {
+          needsSplit = true;
+          updated.push({
+            ...item,
+            id: item.id + '-carrot',
+            title: 'Морковь',
+            quantity: '1 шт.',
+            category: 'produce',
+          });
+          updated.push({
+            ...item,
+            id: item.id + '-onion',
+            title: 'Лук репчатый',
+            quantity: '1 шт.',
+            category: 'produce',
+          });
+        } else if (t === 'чеснок и зелень укропа' || t === 'чеснок и укроп') {
+          needsSplit = true;
+          updated.push({
+            ...item,
+            id: item.id + '-garlic',
+            title: 'Чеснок',
+            quantity: '3 зубчика',
+            category: 'produce',
+          });
+          updated.push({
+            ...item,
+            id: item.id + '-dill',
+            title: 'Свежий укроп',
+            quantity: '1 пучок',
+            category: 'produce',
+          });
+        } else {
+          updated.push(item);
+        }
+      });
+
+      return needsSplit ? updated : prev;
+    });
+
+    setRecipes((prev) => {
+      let needsFix = false;
+      const updated = prev.map((r) => {
+        const hasCombined = r.ingredients.some(
+          (ing) =>
+            ing.name === 'Морская соль и прованские травы' ||
+            ing.name === 'Морковь и лук репчатый' ||
+            ing.name === 'Чеснок и зелень укропа'
+        );
+        if (!hasCombined) return r;
+        needsFix = true;
+        const newIngs: typeof r.ingredients = [];
+        r.ingredients.forEach((ing) => {
+          if (ing.name === 'Морская соль и прованские травы') {
+            newIngs.push({ name: 'Морская соль', amount: 'по вкусу', category: 'pantry' });
+            newIngs.push({ name: 'Прованские травы', amount: '1 ч. л.', category: 'pantry' });
+          } else if (ing.name === 'Морковь и лук репчатый') {
+            newIngs.push({ name: 'Морковь', amount: '1 шт.', category: 'produce' });
+            newIngs.push({ name: 'Лук репчатый', amount: '1 шт.', category: 'produce' });
+          } else if (ing.name === 'Чеснок и зелень укропа') {
+            newIngs.push({ name: 'Чеснок', amount: '3 зубчика', category: 'produce' });
+            newIngs.push({ name: 'Свежий укроп', amount: '1 пучок', category: 'produce' });
+          } else {
+            newIngs.push(ing);
+          }
+        });
+        return { ...r, ingredients: newIngs };
+      });
+      return needsFix ? updated : prev;
+    });
+  }, []);
+
   const [inventory, setInventory] = useLocalStorage<InventoryItem[]>('inventory', INITIAL_INVENTORY);
   const [docs, setDocs] = useLocalStorage<DocumentItem[]>('docs', INITIAL_DOCS);
   const [contacts, setContacts] = useLocalStorage<HouseholdContact[]>('contacts', INITIAL_CONTACTS);
@@ -376,6 +533,28 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const [medicines, setMedicines] = useLocalStorage<MedicineItem[]>('medicines', INITIAL_MEDICINES);
   const [meters, setMeters] = useLocalStorage<UtilityMeter[]>('utility_meters', INITIAL_UTILITY_METERS);
+
+  // Самовосстановление и синхронизация цепочек показаний счётчиков (пересчитывает дельты и затраты)
+  useEffect(() => {
+    setMeters((prev) => {
+      let changed = false;
+      const healed = prev.map((meter) => {
+        const recalculated = recalculateMeterReadings(
+          meter.readings,
+          meter.tariffRate,
+          meter.initialValue
+        );
+        const isDiff =
+          JSON.stringify(recalculated) !== JSON.stringify(meter.readings);
+        if (isDiff) {
+          changed = true;
+          return { ...meter, readings: recalculated };
+        }
+        return meter;
+      });
+      return changed ? healed : prev;
+    });
+  }, []);
 
   // Действия с Домашней аптечкой
   const addMedicine = (med: Omit<MedicineItem, 'id'>) => {
@@ -432,18 +611,17 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       prev.map((m) => {
         if (m.id !== id) return m;
         const newTariff = updates.tariffRate !== undefined ? updates.tariffRate : m.tariffRate;
-        const updatedReadings =
-          updates.tariffRate !== undefined
-            ? m.readings.map((r) => ({
-                ...r,
-                cost: Math.round(r.difference * newTariff * 100) / 100,
-              }))
-            : m.readings;
+        const newInitial = updates.initialValue !== undefined ? updates.initialValue : m.initialValue;
 
-        return {
+        const updatedMeter = {
           ...m,
           ...updates,
-          readings: updatedReadings,
+        };
+
+        const recalculated = recalculateMeterReadings(m.readings, newTariff, newInitial);
+        return {
+          ...updatedMeter,
+          readings: recalculated,
         };
       })
     );
@@ -466,34 +644,99 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         if (meter.id !== meterId) return meter;
 
         const effectiveDate = dateStr || new Date().toISOString().split('T')[0];
-        const month = effectiveDate.substring(0, 7); // '2026-10'
+        const month = effectiveDate.substring(0, 7);
 
-        const sortedReadings = [...meter.readings].sort((a, b) => a.date.localeCompare(b.date));
-        const lastReading = sortedReadings.length > 0 ? sortedReadings[sortedReadings.length - 1] : null;
-        const prevValue = lastReading ? lastReading.value : meter.initialValue;
-        const difference = Math.max(0, Math.round((value - prevValue) * 100) / 100);
-        const cost = Math.round(difference * meter.tariffRate * 100) / 100;
+        // Ищем существующую запись за этот месяц или день
+        const existingIdx = meter.readings.findIndex(
+          (r) => r.month === month || r.date === effectiveDate
+        );
 
-        const newReading: UtilityReading = {
-          id: `rd-${Date.now()}`,
-          meterId,
-          date: effectiveDate,
-          month,
-          value,
-          difference,
-          cost,
-          submitted: false,
-          notes,
-        };
+        let newReadingsList: UtilityReading[];
+        if (existingIdx >= 0) {
+          // Обновляем существующее показание
+          const existing = meter.readings[existingIdx];
+          const updatedReading: UtilityReading = {
+            ...existing,
+            date: effectiveDate,
+            month,
+            value,
+            notes: notes !== undefined ? notes : existing.notes,
+          };
+          newReadingsList = meter.readings.map((r, i) => (i === existingIdx ? updatedReading : r));
+        } else {
+          // Добавляем новое показание
+          const newReading: UtilityReading = {
+            id: `rd-${Date.now()}`,
+            meterId,
+            date: effectiveDate,
+            month,
+            value,
+            difference: 0,
+            cost: 0,
+            submitted: false,
+            notes,
+          };
+          newReadingsList = [...meter.readings, newReading];
+        }
 
-        const filtered = meter.readings.filter((r) => r.month !== month);
+        // Пересчитываем ВСЮ цепочку показаний от начала до конца
+        const recalculated = recalculateMeterReadings(
+          newReadingsList,
+          meter.tariffRate,
+          meter.initialValue
+        );
+
         return {
           ...meter,
-          readings: [...filtered, newReading].sort((a, b) => a.date.localeCompare(b.date)),
+          readings: recalculated,
         };
       })
     );
     showToast('Показания счётчика успешно записаны', 'success');
+  };
+
+  const deleteMeterReading = (meterId: string, readingId: string) => {
+    setMeters((prev) =>
+      prev.map((meter) => {
+        if (meter.id !== meterId) return meter;
+        const remaining = meter.readings.filter((r) => r.id !== readingId);
+        const recalculated = recalculateMeterReadings(
+          remaining,
+          meter.tariffRate,
+          meter.initialValue
+        );
+        return {
+          ...meter,
+          readings: recalculated,
+        };
+      })
+    );
+    showToast('Показание удалено из истории', 'info');
+  };
+
+  const updateMeterReading = (
+    meterId: string,
+    readingId: string,
+    updates: Partial<UtilityReading>
+  ) => {
+    setMeters((prev) =>
+      prev.map((meter) => {
+        if (meter.id !== meterId) return meter;
+        const updated = meter.readings.map((r) =>
+          r.id === readingId ? { ...r, ...updates } : r
+        );
+        const recalculated = recalculateMeterReadings(
+          updated,
+          meter.tariffRate,
+          meter.initialValue
+        );
+        return {
+          ...meter,
+          readings: recalculated,
+        };
+      })
+    );
+    showToast('Показание обновлено', 'success');
   };
 
   const toggleReadingSubmitted = (meterId: string, readingId: string) => {
@@ -510,6 +753,76 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     );
   };
 
+  const clearMeterReadings = (meterId?: string) => {
+    if (meterId) {
+      setMeters((prev) =>
+        prev.map((m) => (m.id === meterId ? { ...m, readings: [] } : m))
+      );
+      showToast('История показаний выбранного счётчика очищена', 'info');
+    } else {
+      setMeters((prev) => prev.map((m) => ({ ...m, readings: [] })));
+      showToast('Вся история показаний по всем счётчикам очищена', 'info');
+    }
+  };
+
+  const resetMetersToZero = () => {
+    setMeters((prev) =>
+      prev.map((m) => ({
+        ...m,
+        initialValue: 0,
+        readings: [],
+      }))
+    );
+    showToast('Счётчики обнулены (база = 0, история очищена)', 'info');
+  };
+
+  const resetMetersToInitial = () => {
+    setMeters(INITIAL_UTILITY_METERS);
+    showToast('Счётчики возвращены к исходным демонстрационным данным', 'info');
+  };
+
+  const clearShoppingItems = (onlyCompleted = false) => {
+    if (onlyCompleted) {
+      setShoppingItems((prev) => prev.filter((item) => !item.completed));
+      showToast('Купленные товары удалены из списка', 'info');
+    } else {
+      setShoppingItems([]);
+      showToast('Список покупок полностью очищен', 'info');
+    }
+  };
+
+  const clearTasks = (onlyCompleted = false) => {
+    if (onlyCompleted) {
+      setTasks((prev) => {
+        const remaining = prev.filter((t) => !t.completed);
+        saveAllTasksToIDB(remaining).catch(() => {});
+        return remaining;
+      });
+      showToast('Завершённые задачи удалены', 'info');
+    } else {
+      setTasks([]);
+      saveAllTasksToIDB([]).catch(() => {});
+      showToast('Все задачи удалены', 'info');
+    }
+  };
+
+  const clearAllLocalStorageData = () => {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.startsWith(STORAGE_PREFIX)) {
+            keysToRemove.push(k);
+          }
+        }
+        keysToRemove.forEach((k) => localStorage.removeItem(k));
+      }
+    } catch (_) {}
+    resetToDefaultData();
+    showToast('Все локальные данные сброшены', 'info');
+  };
+
   // ==================== ОБЪЕКТЫ И ПАСПОРТА ДОМА ====================
   const [properties, setProperties] = useLocalStorage<HouseholdProperty[]>('properties', INITIAL_PROPERTIES);
   const [activePropertyId, setActivePropertyId] = useLocalStorage<PropertyId>('active_property_id', 'apartment');
@@ -518,6 +831,29 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [petEmergency, setPetEmergency] = useLocalStorage<PetEmergencyInfo>('pet_emergency', INITIAL_PET_EMERGENCY);
   const [accidentGuidance, setAccidentGuidance] = useLocalStorage<AccidentGuidance>('accident_guidance', INITIAL_ACCIDENT_DATA);
   const [medicalEmergency, setMedicalEmergency] = useLocalStorage<MedicalMemberInfo[]>('medical_emergency', INITIAL_MEDICAL_EMERGENCY);
+
+  // ==================== СЕМЕЙНОЕ ОБЛАКО И КАСТОМИЗАЦИЯ МОДУЛЕЙ ====================
+  const [familyCode, setFamilyCode] = useLocalStorage<string | null>('family_code', null);
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>(() => {
+    try {
+      const savedCode = localStorage.getItem(STORAGE_PREFIX + 'family_code');
+      return savedCode && savedCode !== 'null' ? 'synced' : 'local_only';
+    } catch (_) {
+      return 'local_only';
+    }
+  });
+  const [lastCloudSync, setLastCloudSync] = useLocalStorage<string | null>('last_cloud_sync', null);
+  const [visibleModules, setVisibleModules] = useLocalStorage<Record<AppModuleId, boolean>>(
+    'visible_modules',
+    DEFAULT_VISIBLE_MODULES
+  );
+
+  const toggleModuleVisibility = (id: AppModuleId) => {
+    setVisibleModules((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  };
 
   // Очистка устаревших демо-шаблонов с привязкой к конкретному городу (Москва) и наполнение контактов мастеров
   useEffect(() => {
@@ -892,13 +1228,75 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // --- Shopping Lists Logic ---
   const addShoppingItem = (itemData: Omit<ShoppingItem, 'id' | 'createdAt'>) => {
+    // Автоматический парсинг входящей строки: разбивает по запятым, переносам строк и союзам («и», «да», «плюс», «+»)
+    const parsed = parseShoppingInput(itemData.title, {
+      defaultCategory: itemData.category,
+      defaultQuantity: itemData.quantity,
+    });
+
+    if (parsed.length > 1) {
+      const newItems: ShoppingItem[] = parsed.map((p, idx) => ({
+        ...itemData,
+        id: 'shop_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6) + '_' + idx,
+        title: p.title,
+        quantity: p.quantity || itemData.quantity,
+        category: p.category,
+        createdAt: new Date().toISOString(),
+      }));
+
+      setShoppingItems((prev) => [...newItems, ...prev]);
+      showToast(
+        `Разбито на ${newItems.length} поз.: ${newItems.map((i) => i.title).join(', ')}`,
+        'success'
+      );
+      return;
+    }
+
+    const single = parsed[0];
     const newItem: ShoppingItem = {
       ...itemData,
       id: 'shop_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 5),
+      title: single ? single.title : itemData.title,
+      quantity: (single && single.quantity) || itemData.quantity,
+      category: (single && single.category) || itemData.category,
       createdAt: new Date().toISOString(),
     };
     setShoppingItems((prev) => [newItem, ...prev]);
     showToast(`Товар «${newItem.title}» добавлен в список`, 'success');
+  };
+
+  const addShoppingItems = (itemsData: Array<Omit<ShoppingItem, 'id' | 'createdAt'>>) => {
+    if (!itemsData || itemsData.length === 0) return;
+    const allCreated: ShoppingItem[] = [];
+
+    itemsData.forEach((itemData, rootIdx) => {
+      const parsed = parseShoppingInput(itemData.title, {
+        defaultCategory: itemData.category,
+        defaultQuantity: itemData.quantity,
+      });
+
+      if (parsed.length > 0) {
+        parsed.forEach((p, idx) => {
+          allCreated.push({
+            ...itemData,
+            id: 'shop_' + Date.now().toString(36) + '_' + rootIdx + '_' + idx,
+            title: p.title,
+            quantity: p.quantity || itemData.quantity,
+            category: p.category,
+            createdAt: new Date().toISOString(),
+          });
+        });
+      } else {
+        allCreated.push({
+          ...itemData,
+          id: 'shop_' + Date.now().toString(36) + '_' + rootIdx,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    });
+
+    setShoppingItems((prev) => [...allCreated, ...prev]);
+    showToast(`Добавлено позиций: ${allCreated.length}`, 'success');
   };
 
   const toggleShoppingItem = (id: string) => {
@@ -928,19 +1326,57 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     showToast(`Список «${name}» создан`, 'success');
   };
 
-  const importRecipeIngredientsToShopping = (recipe: Recipe, targetListId?: string) => {
+  const importRecipeIngredientsToShopping = (
+    recipe: Recipe | Omit<Recipe, 'id'>,
+    targetListId?: string,
+    selectedIngredientIndices?: number[]
+  ) => {
     const listId = targetListId || activeShoppingListId || shoppingLists[0]?.id || 'list-supermarket';
-    const newItems: ShoppingItem[] = recipe.ingredients.map((ing, i) => ({
-      id: 'rec_ing_' + Date.now() + '_' + i,
-      listId,
-      title: ing.name,
-      quantity: ing.amount,
-      category: (ing.category as any) || 'pantry',
-      completed: false,
-      addedBy: activeMemberId || undefined,
-      recipeSource: recipe.title,
-      createdAt: new Date().toISOString(),
-    }));
+    const newItems: ShoppingItem[] = [];
+
+    recipe.ingredients.forEach((ing, i) => {
+      if (selectedIngredientIndices && !selectedIngredientIndices.includes(i)) {
+        return;
+      }
+      // Используем умный парсер, который автоматически разобьет любые союзы «и», запятые или сдвоенные названия
+      const parsed = parseShoppingInput(ing.name, {
+        defaultCategory: ing.category as any,
+        defaultQuantity: ing.amount,
+      });
+
+      if (parsed.length > 0) {
+        parsed.forEach((p, subIdx) => {
+          newItems.push({
+            id: 'rec_ing_' + Date.now() + '_' + i + '_' + subIdx,
+            listId,
+            title: p.title,
+            quantity: p.quantity || ing.amount,
+            category: (p.category as any) || (ing.category as any) || 'pantry',
+            completed: false,
+            addedBy: activeMemberId || undefined,
+            recipeSource: recipe.title,
+            createdAt: new Date().toISOString(),
+          });
+        });
+      } else {
+        newItems.push({
+          id: 'rec_ing_' + Date.now() + '_' + i,
+          listId,
+          title: ing.name,
+          quantity: ing.amount,
+          category: (ing.category as any) || 'pantry',
+          completed: false,
+          addedBy: activeMemberId || undefined,
+          recipeSource: recipe.title,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    });
+
+    if (newItems.length === 0) {
+      showToast('Не выбрано ни одного ингредиента для добавления', 'info');
+      return;
+    }
 
     setShoppingItems((prev) => [...newItems, ...prev]);
     showToast(`Ингредиенты блюда «${recipe.title}» (${newItems.length} поз.) добавлены в покупки!`, 'success');
@@ -1192,6 +1628,234 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   };
 
+  const getFamilySnapshotData = () => {
+    return {
+      householdName,
+      members,
+      tasks,
+      events,
+      shoppingLists,
+      shoppingItems,
+      recipes,
+      mealPlan,
+      inventory,
+      docs,
+      contacts,
+      medicines,
+      meters,
+      properties,
+      petEmergency,
+      accidentGuidance,
+      medicalEmergency,
+    };
+  };
+
+  const applyFamilySnapshotData = (data: any) => {
+    if (!data || typeof data !== 'object') return false;
+    if (data.householdName) setHouseholdName(data.householdName);
+    if (Array.isArray(data.members)) setMembers(data.members);
+    if (Array.isArray(data.tasks)) {
+      setTasks(data.tasks);
+      saveAllTasksToIDB(data.tasks).catch(() => {});
+    }
+    if (Array.isArray(data.events)) {
+      setEvents(data.events);
+      saveAllEventsToIDB(data.events).catch(() => {});
+    }
+    if (Array.isArray(data.shoppingLists)) setShoppingLists(data.shoppingLists);
+    if (Array.isArray(data.shoppingItems)) setShoppingItems(data.shoppingItems);
+    if (Array.isArray(data.recipes)) setRecipes(data.recipes);
+    if (Array.isArray(data.mealPlan)) setMealPlan(data.mealPlan);
+    if (Array.isArray(data.inventory)) setInventory(data.inventory);
+    if (Array.isArray(data.docs)) setDocs(data.docs);
+    if (Array.isArray(data.contacts)) setContacts(data.contacts);
+    if (Array.isArray(data.medicines)) setMedicines(data.medicines);
+    if (Array.isArray(data.meters)) setMeters(data.meters);
+    if (Array.isArray(data.properties)) setProperties(data.properties);
+    if (data.petEmergency) setPetEmergency(data.petEmergency);
+    if (data.accidentGuidance) setAccidentGuidance(data.accidentGuidance);
+    if (Array.isArray(data.medicalEmergency)) setMedicalEmergency(data.medicalEmergency);
+    return true;
+  };
+
+  const connectFamilyCode = async (code: string): Promise<boolean> => {
+    const clean = code.trim().toUpperCase().replace(/[^A-Z0-9-]/g, '');
+    if (clean.length < 4) {
+      showToast('Код семьи должен содержать не менее 4 символов', 'error');
+      return false;
+    }
+    setCloudSyncStatus('syncing');
+    try {
+      const res = await fetch(`/api/family-sync/pull/${clean}`);
+      if (!res.ok) {
+        if (res.status === 404) {
+          showToast('Семья с таким кодом пока не создана на сервере', 'error');
+        } else {
+          showToast('Не удалось подключиться к серверу', 'error');
+        }
+        setCloudSyncStatus('error');
+        return false;
+      }
+      const json = await res.json();
+      if (json && json.data) {
+        applyFamilySnapshotData(json.data);
+        setFamilyCode(clean);
+        setLastCloudSync(json.updatedAt || new Date().toISOString());
+        setCloudSyncStatus('synced');
+        showToast(`Успешно подключено к семье ${clean}! Данные синхронизированы`, 'success');
+        return true;
+      } else {
+        showToast('Некорректный формат данных семьи', 'error');
+        setCloudSyncStatus('error');
+        return false;
+      }
+    } catch (err: any) {
+      setCloudSyncStatus('offline');
+      showToast('Ошибка сети при подключении к семейному коду', 'error');
+      return false;
+    }
+  };
+
+  const generateNewFamilyCode = async (): Promise<string> => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let rand = '';
+    for (let i = 0; i < 4; i++) {
+      rand += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    const newCode = `HAUS-${rand}`;
+    setFamilyCode(newCode);
+    setCloudSyncStatus('syncing');
+    try {
+      const payload = getFamilySnapshotData();
+      const res = await fetch('/api/family-sync/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ familyCode: newCode, data: payload }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setLastCloudSync(json.updatedAt || new Date().toISOString());
+        setCloudSyncStatus('synced');
+        showToast(`Создан семейный код: ${newCode}. Поделитесь им с родными!`, 'success');
+      } else {
+        setCloudSyncStatus('local_only');
+      }
+    } catch (err) {
+      setCloudSyncStatus('local_only');
+    }
+    return newCode;
+  };
+
+  const disconnectFamilyCode = () => {
+    setFamilyCode(null);
+    setCloudSyncStatus('local_only');
+    setLastCloudSync(null);
+    showToast('Синхронизация отключена. Данные сохранены локально', 'info');
+  };
+
+  const syncWithCloud = async (): Promise<boolean> => {
+    if (!familyCode) return false;
+    setCloudSyncStatus('syncing');
+    try {
+      const pullRes = await fetch(`/api/family-sync/pull/${familyCode}`);
+      if (pullRes.ok) {
+        const cloudData = await pullRes.json();
+        if (cloudData && cloudData.data) {
+          applyFamilySnapshotData(cloudData.data);
+        }
+      }
+      const payload = getFamilySnapshotData();
+      const pushRes = await fetch('/api/family-sync/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ familyCode, data: payload }),
+      });
+      if (pushRes.ok) {
+        const resJson = await pushRes.json();
+        setLastCloudSync(resJson.updatedAt || new Date().toISOString());
+        setCloudSyncStatus('synced');
+        showToast('Семья синхронизирована с облаком', 'success');
+        return true;
+      } else {
+        setCloudSyncStatus('error');
+        return false;
+      }
+    } catch (err) {
+      setCloudSyncStatus('offline');
+      return false;
+    }
+  };
+
+  // Начальная автоматическая подгрузка из семейного облака при наличии кода семьи
+  useEffect(() => {
+    if (!familyCode) return;
+    let isMounted = true;
+    setCloudSyncStatus('syncing');
+    fetch(`/api/family-sync/pull/${familyCode}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!isMounted || !data || !data.data) return;
+        applyFamilySnapshotData(data.data);
+        setLastCloudSync(data.updatedAt || new Date().toISOString());
+        setCloudSyncStatus('synced');
+      })
+      .catch(() => {
+        if (isMounted) setCloudSyncStatus('offline');
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [familyCode]);
+
+  // Фоновое автоматическое сохранение в облако при изменении данных семьи
+  const isCloudMountRef = useRef(true);
+  useEffect(() => {
+    if (isCloudMountRef.current) {
+      isCloudMountRef.current = false;
+      return;
+    }
+    if (!familyCode) return;
+    const timer = setTimeout(() => {
+      const payload = getFamilySnapshotData();
+      fetch('/api/family-sync/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ familyCode, data: payload }),
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((resJson) => {
+          if (resJson?.updatedAt) {
+            setLastCloudSync(resJson.updatedAt);
+            setCloudSyncStatus('synced');
+          }
+        })
+        .catch(() => {
+          setCloudSyncStatus('offline');
+        });
+    }, 2500);
+
+    return () => clearTimeout(timer);
+  }, [
+    familyCode,
+    householdName,
+    members,
+    tasks,
+    events,
+    shoppingLists,
+    shoppingItems,
+    recipes,
+    mealPlan,
+    inventory,
+    docs,
+    contacts,
+    medicines,
+    meters,
+    properties,
+    petEmergency,
+    accidentGuidance,
+    medicalEmergency,
+  ]);
+
   const resetToDefaultData = () => {
     setHouseholdName('Наш тёплый дом');
     setMembers(INITIAL_MEMBERS);
@@ -1247,6 +1911,7 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         setActiveShoppingListId,
         shoppingItems,
         addShoppingItem,
+        addShoppingItems,
         toggleShoppingItem,
         deleteShoppingItem,
         clearCompletedShoppingItems,
@@ -1291,7 +1956,15 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         updateMeter,
         deleteMeter,
         addMeterReading,
+        deleteMeterReading,
+        updateMeterReading,
         toggleReadingSubmitted,
+        clearMeterReadings,
+        resetMetersToZero,
+        resetMetersToInitial,
+        clearShoppingItems,
+        clearTasks,
+        clearAllLocalStorageData,
         properties,
         activePropertyId,
         setActivePropertyId,
@@ -1312,6 +1985,15 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         exportBackupJson,
         importBackupJson,
         resetToDefaultData,
+        familyCode,
+        cloudSyncStatus,
+        lastCloudSync,
+        connectFamilyCode,
+        generateNewFamilyCode,
+        disconnectFamilyCode,
+        syncWithCloud,
+        visibleModules,
+        toggleModuleVisibility,
         toasts,
         showToast,
         removeToast,

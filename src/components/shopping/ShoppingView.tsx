@@ -12,12 +12,15 @@ import {
   Hammer,
   Camera,
   Receipt,
+  ListPlus,
 } from 'lucide-react';
 import { useHousehold } from '../../context/HouseholdContext';
 import { ShoppingCategory, ShoppingItem, ScannedReceipt } from '../../types';
 import { MemberAvatar } from '../common/MemberAvatar';
 import { ReceiptScannerModal } from '../receipts/ReceiptScannerModal';
 import { ReceiptReviewModal } from '../receipts/ReceiptReviewModal';
+import { SmartBulkAddModal } from './SmartBulkAddModal';
+import { parseShoppingInput, ParsedShoppingItem } from '../../utils/shoppingParser';
 
 const CATEGORY_NAMES: Record<ShoppingCategory, string> = {
   produce: '🥦 Овощи, фрукты и зелень',
@@ -39,6 +42,7 @@ export const ShoppingView: React.FC = () => {
     setActiveShoppingListId,
     shoppingItems,
     addShoppingItem,
+    addShoppingItems,
     toggleShoppingItem,
     deleteShoppingItem,
     clearCompletedShoppingItems,
@@ -53,6 +57,9 @@ export const ShoppingView: React.FC = () => {
   const [newCategory, setNewCategory] = useState<ShoppingCategory>('produce');
   const [isAddingNewList, setIsAddingNewList] = useState(false);
   const [newListName, setNewListName] = useState('');
+
+  // Умная пакетная вставка списка
+  const [isBulkAddOpen, setIsBulkAddOpen] = useState(false);
 
   // Состояния сканера чеков в покупках
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -75,6 +82,27 @@ export const ShoppingView: React.FC = () => {
     }
     groupedPending[item.category]!.push(item);
   });
+
+  // Предпросмотр интеллектуального разделения при вводе строки
+  const previewItems: ParsedShoppingItem[] = React.useMemo(() => {
+    const trimmed = newTitle.trim();
+    if (
+      !trimmed ||
+      (!trimmed.includes(',') &&
+        !trimmed.includes(';') &&
+        !trimmed.includes('\n') &&
+        !/\s+и\s+/iu.test(trimmed) &&
+        !/\s+да\s+/iu.test(trimmed) &&
+        !/\s+плюс\s+/iu.test(trimmed) &&
+        !/\s+\+\s+/.test(trimmed))
+    ) {
+      return [];
+    }
+    return parseShoppingInput(trimmed, {
+      defaultCategory: newCategory,
+      defaultQuantity: newQuantity,
+    });
+  }, [newTitle, newCategory, newQuantity]);
 
   const handleAddItem = (e: React.FormEvent) => {
     e.preventDefault();
@@ -158,7 +186,17 @@ export const ShoppingView: React.FC = () => {
           </button>
         </div>
 
-        <div className="flex items-center space-x-2 self-start sm:self-auto">
+        <div className="flex items-center space-x-2 self-start sm:self-auto flex-wrap gap-y-2">
+          <button
+            type="button"
+            onClick={() => setIsBulkAddOpen(true)}
+            className="flex items-center space-x-1.5 px-3.5 py-2 rounded-2xl bg-white border border-[#E3DFD5] hover:bg-[#FAF9F5] hover:border-[#E15A42]/50 text-[#1F1D1A] text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-98"
+            title="Вставить список из заметок или мессенджера"
+          >
+            <ListPlus className="w-3.5 h-3.5 text-[#E15A42]" />
+            <span>Вставить списком</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setIsScannerOpen(true)}
@@ -235,61 +273,119 @@ export const ShoppingView: React.FC = () => {
       {/* Форма быстрого добавления товара */}
       <form
         onSubmit={handleAddItem}
-        className="bg-white rounded-3xl p-4 sm:p-5 border border-[#EBE7DF] shadow-xs flex flex-col md:flex-row items-center gap-3"
+        className="bg-white rounded-3xl p-4 sm:p-5 border border-[#EBE7DF] shadow-xs flex flex-col gap-3"
       >
-        <div className="flex-1 w-full">
-          <input
-            type="text"
-            required
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            placeholder="Что нужно купить? (напр: Сыр пармезан, помидоры)..."
-            className="w-full px-4 py-2.5 rounded-2xl bg-[#FAF9F5] border border-[#E3DFD5] text-sm text-[#1F1D1A] placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-[#E15A42]/30 focus:border-[#E15A42]"
-          />
-        </div>
+        <div className="flex flex-col md:flex-row items-center gap-3">
+          <div className="flex-1 w-full">
+            <input
+              type="text"
+              required
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              placeholder="Что нужно купить? (напр: свежий базилик и черри, 2 пачки творога, молоко)..."
+              className="w-full px-4 py-2.5 rounded-2xl bg-[#FAF9F5] border border-[#E3DFD5] text-sm text-[#1F1D1A] placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-[#E15A42]/30 focus:border-[#E15A42]"
+            />
+          </div>
 
-        <div className="w-full md:w-44">
-          <input
-            type="text"
-            value={newQuantity}
-            onChange={(e) => setNewQuantity(e.target.value)}
-            placeholder="Количество (2 уп, 1 кг)"
-            className="w-full px-3.5 py-2.5 rounded-2xl bg-[#FAF9F5] border border-[#E3DFD5] text-xs text-[#1F1D1A] placeholder:text-stone-400 focus:outline-none"
-          />
-        </div>
+          <div className="w-full md:w-44">
+            <input
+              type="text"
+              value={newQuantity}
+              onChange={(e) => setNewQuantity(e.target.value)}
+              placeholder="Количество (2 уп, 1 кг)"
+              className="w-full px-3.5 py-2.5 rounded-2xl bg-[#FAF9F5] border border-[#E3DFD5] text-xs text-[#1F1D1A] placeholder:text-stone-400 focus:outline-none"
+            />
+          </div>
 
-        <div className="w-full md:w-56">
-          <select
-            value={newCategory}
-            onChange={(e) => setNewCategory(e.target.value as ShoppingCategory)}
-            className="w-full px-3 py-2.5 rounded-2xl bg-[#FAF9F5] border border-[#E3DFD5] text-xs text-[#1F1D1A] focus:outline-none"
+          <div className="w-full md:w-56">
+            <select
+              value={newCategory}
+              onChange={(e) => setNewCategory(e.target.value as ShoppingCategory)}
+              className="w-full px-3 py-2.5 rounded-2xl bg-[#FAF9F5] border border-[#E3DFD5] text-xs text-[#1F1D1A] focus:outline-none"
+            >
+              {Object.entries(CATEGORY_NAMES).map(([key, label]) => (
+                <option key={key} value={key}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            type="submit"
+            className="w-full md:w-auto px-6 py-2.5 rounded-2xl bg-[#E15A42] hover:bg-[#D04931] text-white text-xs font-bold shadow-md shadow-orange-600/20 active:scale-[0.98] transition-all cursor-pointer shrink-0 flex items-center justify-center space-x-1.5"
           >
-            {Object.entries(CATEGORY_NAMES).map(([key, label]) => (
-              <option key={key} value={key}>
-                {label}
-              </option>
-            ))}
-          </select>
+            <Plus className="w-4 h-4 stroke-[2.5]" />
+            <span>Добавить</span>
+          </button>
         </div>
 
-        <button
-          type="submit"
-          className="w-full md:w-auto px-6 py-2.5 rounded-2xl bg-[#E15A42] hover:bg-[#D04931] text-white text-xs font-bold shadow-md shadow-orange-600/20 active:scale-[0.98] transition-all cursor-pointer shrink-0 flex items-center justify-center space-x-1.5"
-        >
-          <Plus className="w-4 h-4 stroke-[2.5]" />
-          <span>Добавить</span>
-        </button>
+        {/* Индикатор интеллектуального разделения на отдельные товары при вводе союзов «и» или запятых */}
+        {previewItems.length > 1 ? (
+          <div className="pt-2 border-t border-dashed border-[#E8E3D7] flex items-center flex-wrap gap-1.5 animate-in fade-in">
+            <div className="flex items-center space-x-1 text-[11px] font-bold text-amber-900 bg-amber-100/80 px-2.5 py-1 rounded-xl border border-amber-200 shrink-0">
+              <Sparkles className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
+              <span>Автоматически разобьётся на {previewItems.length} поз.:</span>
+            </div>
+            {previewItems.map((item, idx) => (
+              <span
+                key={idx}
+                className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-xl bg-[#FAF9F5] border border-[#E0DBD0] text-xs text-[#1F1D1A] font-medium shadow-2xs"
+              >
+                <span className="font-bold">{item.title}</span>
+                {item.quantity && (
+                  <span className="text-[#E15A42] text-[10px] font-bold bg-white px-1.5 py-0.5 rounded-md border border-stone-200">
+                    {item.quantity}
+                  </span>
+                )}
+                <span className="text-[10px] text-stone-400">
+                  · {CATEGORY_NAMES[item.category]?.split(' ')[1] || CATEGORY_NAMES[item.category]}
+                </span>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <div className="text-[11px] text-[#8C867D] flex items-center space-x-1.5 px-1">
+            <Sparkles className="w-3 h-3 text-amber-500 shrink-0" />
+            <span>
+              💡 Пишите через запятую или союзы «и», «плюс» (напр: <em>«базилик и черри»</em>) — система автоматически создаст отдельные позиции по отделам.
+            </span>
+          </div>
+        )}
       </form>
 
       {/* Список товаров, сгруппированный по категориям */}
       <div className="space-y-6">
         {pendingItems.length === 0 && completedItems.length === 0 ? (
-          <div className="bg-white rounded-3xl p-12 text-center border border-[#EBE7DF] shadow-xs">
-            <ShoppingBag className="w-12 h-12 mx-auto text-stone-300 stroke-[1.5] mb-3" />
+          <div className="bg-white rounded-3xl p-10 text-center border border-[#EBE7DF] shadow-xs space-y-3">
+            <ShoppingBag className="w-12 h-12 mx-auto text-stone-300 stroke-[1.5]" />
             <h3 className="text-base font-bold text-[#1F1D1A]">Список покупок пуст</h3>
-            <p className="text-xs text-[#8A8477] mt-1">
-              Добавьте первый товар через строку выше или воспользуйтесь «Умным вводом»
+            <p className="text-xs text-[#8A8477] max-w-md mx-auto">
+              Введите товары через строку выше, воспользуйтесь кнопкой «Вставить списком» или кликните готовый пример:
             </p>
+            <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setNewTitle('Свежий базилик и черри')}
+                className="px-3 py-1.5 rounded-xl bg-[#FAF9F5] border border-stone-200 hover:border-[#E15A42] hover:bg-orange-50/40 text-xs text-[#1F1D1A] font-medium transition-all cursor-pointer"
+              >
+                🥦 Свежий базилик и черри
+              </button>
+              <button
+                type="button"
+                onClick={() => setNewTitle('Морская соль и прованские травы')}
+                className="px-3 py-1.5 rounded-xl bg-[#FAF9F5] border border-stone-200 hover:border-[#E15A42] hover:bg-orange-50/40 text-xs text-[#1F1D1A] font-medium transition-all cursor-pointer"
+              >
+                🧂 Морская соль и прованские травы
+              </button>
+              <button
+                type="button"
+                onClick={() => setNewTitle('Молоко 1 л, 2 пачки творога и яйца')}
+                className="px-3 py-1.5 rounded-xl bg-[#FAF9F5] border border-stone-200 hover:border-[#E15A42] hover:bg-orange-50/40 text-xs text-[#1F1D1A] font-medium transition-all cursor-pointer"
+              >
+                🥛 Молоко 1 л, 2 пачки творога и яйца
+              </button>
+            </div>
           </div>
         ) : (
           Object.entries(groupedPending).map(([category, items]) => {
@@ -453,6 +549,22 @@ export const ShoppingView: React.FC = () => {
         onBackToScanner={() => {
           setIsReviewOpen(false);
           setIsScannerOpen(true);
+        }}
+      />
+
+      {/* Модалка умной вставки списка покупок */}
+      <SmartBulkAddModal
+        isOpen={isBulkAddOpen}
+        onClose={() => setIsBulkAddOpen(false)}
+        shoppingLists={shoppingLists}
+        activeListId={activeList.id}
+        onAddItems={(items) => {
+          addShoppingItems(
+            items.map((i) => ({
+              ...i,
+              addedBy: activeMemberId || undefined,
+            }))
+          );
         }}
       />
     </div>

@@ -1,6 +1,7 @@
 import express from 'express';
 import http from 'http';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -107,6 +108,84 @@ async function startServer() {
     });
   });
 
+  // ==================== СЕМЕЙНАЯ ОБЛАЧНАЯ СИНХРОНИЗАЦИЯ ====================
+  const familiesDir = path.resolve(__dirname, 'data', 'families');
+  try {
+    if (!fs.existsSync(familiesDir)) {
+      fs.mkdirSync(familiesDir, { recursive: true });
+    }
+  } catch (_) {}
+
+  // Отправка (push) обновлений семьи
+  app.post('/api/family-sync/push', (req, res) => {
+    try {
+      const { familyCode, data } = req.body;
+      if (!familyCode || !data) {
+        return res.status(400).json({ error: 'Не указан familyCode или data' });
+      }
+
+      const cleanCode = String(familyCode).trim().toUpperCase().replace(/[^A-Z0-9-]/g, '');
+      if (cleanCode.length < 4) {
+        return res.status(400).json({ error: 'Код семьи должен содержать от 4 до 12 символов' });
+      }
+
+      const filePath = path.resolve(familiesDir, `${cleanCode}.json`);
+      const payload = {
+        familyCode: cleanCode,
+        updatedAt: new Date().toISOString(),
+        data,
+      };
+
+      fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf-8');
+      return res.json({ success: true, updatedAt: payload.updatedAt });
+    } catch (err: any) {
+      console.error('[Family Sync Push Error]:', err);
+      return res.status(500).json({ error: 'Ошибка сохранения на сервере: ' + err?.message });
+    }
+  });
+
+  // Получение (pull) актуального состояния семьи
+  app.get('/api/family-sync/pull/:code', (req, res) => {
+    try {
+      const cleanCode = String(req.params.code).trim().toUpperCase().replace(/[^A-Z0-9-]/g, '');
+      const filePath = path.resolve(familiesDir, `${cleanCode}.json`);
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: 'Семья с таким кодом не найдена' });
+      }
+
+      const raw = fs.readFileSync(filePath, 'utf-8');
+      const payload = JSON.parse(raw);
+      return res.json(payload);
+    } catch (err: any) {
+      console.error('[Family Sync Pull Error]:', err);
+      return res.status(500).json({ error: 'Ошибка загрузки с сервера: ' + err?.message });
+    }
+  });
+
+  // Проверка статуса семейного кода
+  app.get('/api/family-sync/check/:code', (req, res) => {
+    try {
+      const cleanCode = String(req.params.code).trim().toUpperCase().replace(/[^A-Z0-9-]/g, '');
+      const filePath = path.resolve(familiesDir, `${cleanCode}.json`);
+      const exists = fs.existsSync(filePath);
+
+      if (!exists) {
+        return res.json({ exists: false });
+      }
+
+      const raw = fs.readFileSync(filePath, 'utf-8');
+      const payload = JSON.parse(raw);
+      return res.json({
+        exists: true,
+        updatedAt: payload.updatedAt,
+        householdName: payload.data?.householdName || 'Семейное пространство',
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message });
+    }
+  });
+
   // Серверный endpoint для интеллектуального разбора Gemini API
   app.post('/api/ai/parse', async (req, res) => {
     const { text, members = [], imageBase64 } = req.body;
@@ -140,7 +219,7 @@ async function startServer() {
       const prompt = `Ты — встроенный интеллектуальный ассистент домашнего органайзера «Дом без хаоса» (OneHaus «Send it in»).
 Пользователь передал команду, голосовую заметку или фото чека (на русском, греческом (Ελληνικά) или английском языке). Твоя цель — извлечь структурированные действия:
 - shopping: позиции в список покупок (title: название товара (если чек на греческом/английском, переведи на понятный русский или оставь понятное название), category: produce|dairy|meat|bakery|pantry|household|pharmacy|drinks|other, quantity: количество, listId: 'list-supermarket')
-  ВАЖНО: Если пользователь говорит «Добавь в список покупок — соль», создай РОВНО ОДНУ позицию с title: "Соль", category: "pantry". Не создавай лишних задач или дубликатов!
+  ВАЖНО: Каждый отдельный продукт должен быть ОТДЕЛЬНОЙ позицией! Никогда не объединяй разные продукты через «и» (например, «базилик и черри» или «соль и прованские травы» — создавай строго две отдельные позиции). Если пользователь говорит «Добавь в список покупок — соль», создай РОВНО ОДНУ позицию с title: "Соль", category: "pantry".
   Если это чек из супермаркета (в т.ч. греческих Sklavenitis, AB Vassilopoulos, Lidl, MyMarket), извлеки купленные товары и разложи по категориям.
 - task: бытовые задачи (title, zone, dueDate, priority, assigneeId)
 - calendar: события календаря (title, date, startTime, endTime, category, memberIds)
@@ -409,76 +488,126 @@ ${rawText ? `OCR текст чека (дополнительно):\n${rawText}\n
 
     // Если передан URL — пытаемся скачать страницу и извлечь meta теги, OpenGraph и Recipe Schema JSON-LD
     if (url && typeof url === 'string' && url.startsWith('http')) {
-      try {
-        const pageRes = await fetch(url, {
-          headers: {
-            'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-            Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'ru-RU,ru;q=0.9,el;q=0.8,en;q=0.7',
-          },
-          signal: AbortSignal.timeout(6000),
-        });
-
-        if (pageRes.ok) {
-          const html = await pageRes.text();
-
-          // OpenGraph фото
-          const ogImageMatch =
-            html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
-            html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
-          if (ogImageMatch && ogImageMatch[1]) {
-            metaImage = ogImageMatch[1];
-          }
-
-          // Заголовок страницы
-          const ogTitleMatch =
-            html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i) ||
-            html.match(/<title[^>]*>([^<]+)<\/title>/i);
-          if (ogTitleMatch && ogTitleMatch[1]) {
-            pageTitle = ogTitleMatch[1].trim();
-          }
-
-          // Поиск schema.org/Recipe JSON-LD
-          const jsonLdMatches = html.match(
-            /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
+      // 1. Специальная обработка для YouTube видео
+      if (url.includes('youtube.com') || url.includes('youtu.be')) {
+        try {
+          const oembedRes = await fetch(
+            `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`,
+            { signal: AbortSignal.timeout(4000) }
           );
-          let extractedRecipeJson = '';
-          if (jsonLdMatches) {
-            for (const block of jsonLdMatches) {
-              const inner = block.replace(/<script[^>]*>|<\/script>/gi, '').trim();
-              if (
-                inner.includes('"Recipe"') ||
-                inner.includes('recipeIngredient') ||
-                inner.includes('recipeInstructions')
-              ) {
-                extractedRecipeJson = inner;
-                break;
+          if (oembedRes.ok) {
+            const oembedData: any = await oembedRes.json();
+            if (oembedData && oembedData.title) {
+              pageTitle = oembedData.title;
+              if (oembedData.thumbnail_url) {
+                metaImage = oembedData.thumbnail_url;
               }
+              scrapedText = `Название кулинарного видео на YouTube: ${oembedData.title}\nАвтор/канал: ${
+                oembedData.author_name || ''
+              }\nСсылка: ${url}\n${rawText ? `Дополнительный текст от пользователя: ${rawText}` : ''}`;
             }
           }
-
-          // Очистка от скриптов/стилей
-          const textWithoutScripts = html
-            .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, ' ')
-            .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, ' ')
-            .replace(/<nav\b[^<]*(?:(?!<\/nav>)<[^<]*)*<\/nav>/gi, ' ')
-            .replace(/<footer\b[^<]*(?:(?!<\/footer>)<[^<]*)*<\/footer>/gi, ' ')
-            .replace(/<[^>]+>/g, ' ')
-            .replace(/&nbsp;/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim();
-
-          scrapedText = `${
-            extractedRecipeJson ? 'Schema JSON-LD:\n' + extractedRecipeJson + '\n\n' : ''
-          }Заголовок: ${pageTitle}\nСодержимое страницы:\n${textWithoutScripts.slice(
-            0,
-            7500
-          )}\nПользовательские заметки: ${rawText || ''}`;
+        } catch (ytErr: any) {
+          console.warn('[YouTube oEmbed Warning]:', ytErr?.message || ytErr);
         }
-      } catch (scrapeErr: any) {
-        console.warn('[Recipe Scrape Warning]:', scrapeErr?.message || scrapeErr);
-        scrapedText = `URL источника: ${url}\n${rawText || ''}`;
+      }
+
+      // 2. Стандартный веб-парсинг страниц (кулинарные сайты, порталы)
+      if (!pageTitle) {
+        try {
+          const pageRes = await fetch(url, {
+            headers: {
+              'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+              Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+              'Accept-Language': 'ru-RU,ru;q=0.9,el;q=0.8,en;q=0.7',
+            },
+            signal: AbortSignal.timeout(6500),
+          });
+
+          if (pageRes.ok) {
+            const html = await pageRes.text();
+
+            // OpenGraph фото
+            const ogImageMatch =
+              html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
+              html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+            if (ogImageMatch && ogImageMatch[1]) {
+              metaImage = ogImageMatch[1];
+            }
+
+            // Заголовок страницы
+            const ogTitleMatch =
+              html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i) ||
+              html.match(/<title[^>]*>([^<]+)<\/title>/i);
+            if (ogTitleMatch && ogTitleMatch[1]) {
+              pageTitle = ogTitleMatch[1].trim();
+            }
+
+            // Поиск schema.org/Recipe JSON-LD
+            const jsonLdMatches = html.match(
+              /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
+            );
+            let extractedRecipeJson = '';
+            if (jsonLdMatches) {
+              for (const block of jsonLdMatches) {
+                const inner = block.replace(/<script[^>]*>|<\/script>/gi, '').trim();
+                if (
+                  inner.includes('"Recipe"') ||
+                  inner.includes('recipeIngredient') ||
+                  inner.includes('recipeInstructions')
+                ) {
+                  extractedRecipeJson = inner;
+                  break;
+                }
+              }
+            }
+
+            // Очистка от скриптов/стилей
+            const textWithoutScripts = html
+              .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, ' ')
+              .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, ' ')
+              .replace(/<nav\b[^<]*(?:(?!<\/nav>)<[^<]*)*<\/nav>/gi, ' ')
+              .replace(/<footer\b[^<]*(?:(?!<\/footer>)<[^<]*)*<\/footer>/gi, ' ')
+              .replace(/<[^>]+>/g, ' ')
+              .replace(/&nbsp;/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim();
+
+            scrapedText = `${
+              extractedRecipeJson ? 'Schema JSON-LD:\n' + extractedRecipeJson + '\n\n' : ''
+            }Заголовок страницы: ${pageTitle}\nСодержимое страницы:\n${textWithoutScripts.slice(
+              0,
+              7500
+            )}\nПользовательские заметки: ${rawText || ''}`;
+          }
+        } catch (scrapeErr: any) {
+          console.warn('[Recipe Scrape Warning]:', scrapeErr?.message || scrapeErr);
+        }
+      }
+
+      // 3. Резервное извлечение названия из slug в URL, если сайт блокирует парсинг
+      if (!pageTitle && url) {
+        try {
+          const parsedUrl = new URL(url);
+          const segments = parsedUrl.pathname.split('/').filter(Boolean);
+          const lastSegment = segments[segments.length - 1] || segments[segments.length - 2] || '';
+          if (lastSegment) {
+            const cleanSlug = decodeURIComponent(lastSegment)
+              .replace(/\.html?$/i, '')
+              .replace(/[-_]/g, ' ')
+              .replace(/\b[A-Z0-9]{7,}\b/g, '') // удаление служебных id вроде R90025413
+              .trim();
+            if (cleanSlug.length > 2) {
+              pageTitle = cleanSlug;
+              scrapedText += `\nНазвание рецепта из веб-адреса: ${cleanSlug}`;
+            }
+          }
+        } catch (_) {}
+      }
+
+      if (!scrapedText.trim()) {
+        scrapedText = `URL источника: ${url}\n${pageTitle ? `Название блюда: ${pageTitle}\n` : ''}${rawText || ''}`;
       }
     }
 
@@ -521,6 +650,7 @@ ${scrapedText.slice(0, 7500)}
 9. tags: Массив из 3-5 актуальных тегов (например: ["Ужин", "Быстро", "Греция", "Семейное"]).
 10. ingredients: Массив ингредиентов. У каждого:
     - name: понятное название продукта на русском языке (например: "Сыр Фета", "Спагетти", "Оливковое масло Extra Virgin").
+    - ВАЖНО: КАЖДЫЙ ПРОДУКТ ДОЛЖЕН БЫТЬ ОТДЕЛЬНОЙ СТРОКОЙ! Никогда не объединяй продукты через «и» (например, ЗАПРЕЩЕНО писать «Соль и перец», «Морковь и лук», «Базилик и черри» — обязательно делай два отдельных ингредиента: «Морская соль» и «Черный перец»).
     - amount: количество и единицы (например: "200 г", "2 шт.", "3 ст. л.", "по вкусу").
     - category: одна из категорий покупок: "produce" (овощи/фрукты/зелень) | "dairy" (молочное, сыры, яйца) | "meat" (мясо, птица, рыба) | "bakery" (хлеб, мука) | "pantry" (крупы, масло, паста, специи, соусы) | "household" | "drinks" | "other".
 11. steps: Массив пошаговых инструкций приготовления на русском языке (1-я строка, 2-я строка... лаконичные, понятные действия).
@@ -568,8 +698,17 @@ ${scrapedText.slice(0, 7500)}
 
   const httpServer = http.createServer(app);
 
+  const distDir = path.resolve(__dirname, 'dist');
+  const distIndex = path.resolve(distDir, 'index.html');
+  const hasDist = fs.existsSync(distIndex);
+
   // Настройка Vite в dev режиме или раздача статики в prod
-  if (!isProd) {
+  if (isProd && hasDist) {
+    app.use(express.static(distDir));
+    app.get('*', (_req, res) => {
+      res.sendFile(distIndex);
+    });
+  } else {
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
@@ -580,11 +719,6 @@ ${scrapedText.slice(0, 7500)}
       appType: 'spa',
     });
     app.use(vite.middlewares);
-  } else {
-    app.use(express.static(path.resolve(__dirname, 'dist')));
-    app.get('*', (_req, res) => {
-      res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
-    });
   }
 
   httpServer.listen(port, '0.0.0.0', () => {

@@ -42,6 +42,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     medicines,
     meters,
     setIsSOSOpen,
+    visibleModules,
   } = useHousehold();
 
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -281,9 +282,14 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               </div>
             </div>
 
-            {/* Сетка всех 12 модулей */}
+            {/* Сетка модулей */}
             <div className="grid grid-cols-2 gap-2.5">
-              {allSections.map((sec) => {
+              {allSections
+                .filter((sec) => {
+                  if (sec.id === 'dashboard' || sec.id === 'settings') return true;
+                  return visibleModules[sec.id as keyof typeof visibleModules] !== false;
+                })
+                .map((sec) => {
                 const Icon = sec.icon;
                 const isActive = activeTab === sec.id;
                 return (

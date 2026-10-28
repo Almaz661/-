@@ -57,6 +57,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
     medicines,
     meters,
     setIsSOSOpen,
+    familyCode,
+    cloudSyncStatus,
+    syncWithCloud,
+    visibleModules,
   } = useHousehold();
 
   const todayStr = new Date().toISOString().split('T')[0];
@@ -179,7 +183,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#E15A42] to-[#F28C38] flex items-center justify-center text-white shadow-md shadow-orange-500/15">
             <Home className="w-5 h-5 stroke-[2.2]" />
           </div>
-          <div className="overflow-hidden">
+          <div className="overflow-hidden flex-1">
             <h1 className="font-bold text-[#1F1D1A] text-base leading-tight truncate">
               Дом без хаоса
             </h1>
@@ -187,6 +191,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {householdName}
             </p>
           </div>
+        </div>
+
+        {/* Индикатор семейной синхронизации */}
+        <div className="mb-3">
+          {familyCode ? (
+            <div className="flex items-center justify-between text-xs px-2.5 py-1.5 bg-emerald-50 border border-emerald-200/80 rounded-xl text-emerald-800">
+              <span className="flex items-center gap-1.5 font-bold text-xs tracking-wide">
+                <span className={`w-2 h-2 rounded-full ${cloudSyncStatus === 'syncing' ? 'bg-amber-400 animate-ping' : 'bg-emerald-500'}`} />
+                {familyCode}
+              </span>
+              <button
+                onClick={() => syncWithCloud()}
+                title="Синхронизировать сейчас"
+                className="text-[11px] text-emerald-700 hover:text-emerald-900 font-semibold underline cursor-pointer"
+              >
+                {cloudSyncStatus === 'syncing' ? 'Синхр...' : 'Обновить'}
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between text-xs px-2.5 py-1.5 bg-[#F3EFE6] rounded-xl text-[#8A8477]">
+              <span className="text-[11px] font-medium flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#8A8477]" />
+                Локально
+              </span>
+              <button
+                onClick={() => onTabChange('settings')}
+                className="text-[11px] text-[#E15A42] hover:underline font-semibold cursor-pointer"
+              >
+                Вкл. облако
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Быстрый выбор члена семьи / Фильтр */}
@@ -250,7 +286,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Навигационное меню */}
       <nav className="flex-1 px-3 py-3 space-y-1 overflow-y-auto">
-        {navItems.map((item) => {
+        {navItems
+          .filter((item) => {
+            if (item.id === 'dashboard' || item.id === 'settings') return true;
+            return visibleModules[item.id as keyof typeof visibleModules] !== false;
+          })
+          .map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
           return (

@@ -357,6 +357,7 @@ export interface UtilityReading {
   date: string; // YYYY-MM-DD
   month: string; // '2026-10'
   value: number; // текущие показания
+  previousValue?: number; // предыдущие базовые показания
   difference: number; // расход за месяц
   cost?: number; // стоимость по тарифу
   submitted: boolean; // передано в УК
@@ -462,5 +463,28 @@ export interface MedicalMemberInfo {
   currentMedications: string[];
   emergencyContactPhone: string;
 }
+
+export type CloudSyncStatus = 'synced' | 'syncing' | 'offline' | 'local_only' | 'error';
+
+export interface FamilyCloudState {
+  familyCode: string;
+  updatedAt: string;
+  householdName: string;
+}
+
+export type AppModuleId =
+  | 'dashboard'
+  | 'tasks'
+  | 'calendar'
+  | 'shopping'
+  | 'meals'
+  | 'utilities'
+  | 'receipts'
+  | 'firstaid'
+  | 'inventory'
+  | 'docs'
+  | 'contacts'
+  | 'settings';
+
 
 

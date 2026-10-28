@@ -464,6 +464,7 @@ export const MealsView: React.FC = () => {
           setRecipeToEdit(null);
         }}
         recipeToEdit={recipeToEdit}
+        onOpenImport={() => setIsImportModalOpen(true)}
         onSave={(data) => {
           if (recipeToEdit) {
             updateRecipe(recipeToEdit.id, data);

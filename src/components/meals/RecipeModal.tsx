@@ -71,6 +71,7 @@ export const RecipeModal: React.FC<RecipeModalProps> = ({
   onClose,
   onSave,
   recipeToEdit,
+  onOpenImport,
 }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -291,6 +292,35 @@ export const RecipeModal: React.FC<RecipeModalProps> = ({
 
         {/* Форма с прокруткой */}
         <form onSubmit={handleSubmit} className="overflow-y-auto p-6 space-y-6 flex-1 text-xs">
+          {/* Быстрый переход к AI-импорту по ссылке */}
+          {!recipeToEdit && onOpenImport && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onOpenImport();
+              }}
+              className="w-full p-3.5 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 hover:from-amber-100 hover:to-orange-100 border border-amber-200 text-left flex items-center justify-between transition-all cursor-pointer shadow-2xs group"
+            >
+              <div className="flex items-center space-x-2.5">
+                <div className="w-8 h-8 rounded-xl bg-orange-100 text-[#E15A42] flex items-center justify-center shrink-0">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div>
+                  <strong className="block font-bold text-xs text-[#1F1E1C] group-hover:text-[#E15A42] transition-colors">
+                    Есть ссылка с сайта, YouTube или Instagram?
+                  </strong>
+                  <span className="text-[11px] text-[#8C867D]">
+                    AI сам извлечёт ингредиенты, граммовки и шаги за пару секунд
+                  </span>
+                </div>
+              </div>
+              <span className="text-xs font-bold text-[#E15A42] group-hover:translate-x-0.5 transition-transform flex items-center space-x-1 shrink-0 ml-2">
+                <span>Вставить ссылку →</span>
+              </span>
+            </button>
+          )}
+
           {/* 1. Основная информация */}
           <div className="space-y-3.5 bg-white p-4 rounded-2xl border border-[#EDE7DB]">
             <div className="space-y-1">

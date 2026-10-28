@@ -19,6 +19,7 @@ import {
   Instagram,
 } from 'lucide-react';
 import { Recipe, ShoppingCategory } from '../../types';
+import { useHousehold } from '../../context/HouseholdContext';
 
 interface RecipeImportModalProps {
   isOpen: boolean;
@@ -31,6 +32,7 @@ export const RecipeImportModal: React.FC<RecipeImportModalProps> = ({
   onClose,
   onRecipeParsed,
 }) => {
+  const { importRecipeIngredientsToShopping } = useHousehold();
   const [mode, setMode] = useState<'url' | 'text'>('url');
   const [urlInput, setUrlInput] = useState('');
   const [textInput, setTextInput] = useState('');
@@ -95,6 +97,15 @@ export const RecipeImportModal: React.FC<RecipeImportModalProps> = ({
   const handleSaveImmediately = () => {
     if (parsedRecipe) {
       onRecipeParsed(parsedRecipe, false);
+      handleReset();
+      onClose();
+    }
+  };
+
+  const handleSaveAndAddToShopping = () => {
+    if (parsedRecipe) {
+      onRecipeParsed(parsedRecipe, false);
+      importRecipeIngredientsToShopping(parsedRecipe);
       handleReset();
       onClose();
     }
@@ -197,13 +208,66 @@ export const RecipeImportModal: React.FC<RecipeImportModalProps> = ({
                     </div>
                   </div>
 
-                  <input
-                    type="url"
-                    value={urlInput}
-                    onChange={(e) => setUrlInput(e.target.value)}
-                    placeholder="https://eda.ru/... или https://youtube.com/watch?v=... или https://instagram.com/p/..."
-                    className="w-full px-3.5 py-2.5 bg-[#FAF7F2] border border-[#DDD7CB] rounded-xl text-xs focus:outline-none focus:border-[#E15A42] focus:bg-white transition-all font-mono"
-                  />
+                  <div className="relative">
+                    <input
+                      type="url"
+                      value={urlInput}
+                      onChange={(e) => setUrlInput(e.target.value)}
+                      placeholder="https://menunedeli.ru/... или https://youtube.com/watch?v=... или https://unilever..."
+                      className="w-full pl-3.5 pr-24 py-2.5 bg-[#FAF7F2] border border-[#DDD7CB] rounded-xl text-xs focus:outline-none focus:border-[#E15A42] focus:bg-white transition-all font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const text = await navigator.clipboard.readText();
+                          if (text && text.startsWith('http')) {
+                            setUrlInput(text.trim());
+                          }
+                        } catch (_) {}
+                      }}
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 px-2.5 py-1 bg-white hover:bg-stone-100 text-stone-700 border border-[#DDD7CB] text-[10px] font-bold rounded-lg shadow-2xs transition-colors cursor-pointer"
+                    >
+                      Вставить
+                    </button>
+                  </div>
+
+                  {/* Быстрые ссылки для моментальной проверки примеров пользователя */}
+                  <div className="space-y-1.5 pt-1">
+                    <span className="text-[10px] font-bold text-[#8C867D] block">
+                      Примеры ссылок для быстрой проверки:
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setUrlInput('https://menunedeli.ru/recipe/krolik-suvid/')}
+                        className="px-2.5 py-1 rounded-xl bg-stone-100 hover:bg-amber-100 text-[#4A453C] hover:text-[#1F1E1C] text-[11px] font-semibold border border-stone-200 transition-colors cursor-pointer"
+                        title="Кролик су-вид (menunedeli.ru)"
+                      >
+                        🐇 Кролик су-вид (menunedeli.ru)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setUrlInput(
+                            'https://www.unileverfoodsolutions.io/recipe/filet-mignon-with-garlic-rosemary-sauce-R90025413.html'
+                          )
+                        }
+                        className="px-2.5 py-1 rounded-xl bg-stone-100 hover:bg-amber-100 text-[#4A453C] hover:text-[#1F1E1C] text-[11px] font-semibold border border-stone-200 transition-colors cursor-pointer"
+                        title="Филе миньон с розмарином (Unilever)"
+                      >
+                        🥩 Филе миньон (Unilever)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setUrlInput('https://www.youtube.com/watch?v=kQQTl7Om6KY')}
+                        className="px-2.5 py-1 rounded-xl bg-stone-100 hover:bg-rose-100 text-[#4A453C] hover:text-rose-900 text-[11px] font-semibold border border-stone-200 transition-colors cursor-pointer"
+                        title="Видео рецепта на YouTube"
+                      >
+                        🎬 YouTube рецепт
+                      </button>
+                    </div>
+                  </div>
 
                   <p className="text-[11px] text-[#8C867D] leading-relaxed">
                     💡 Приложение скачает содержимое страницы, найдёт ингредиенты с граммовками, выстроит понятные пошаговые инструкции и подберёт фото.
@@ -383,30 +447,49 @@ export const RecipeImportModal: React.FC<RecipeImportModalProps> = ({
                   </div>
                 </div>
               </div>
-
-              {/* Кнопки сохранения */}
-              <div className="pt-2 flex items-center justify-end space-x-3">
-                <button
-                  type="button"
-                  onClick={handleOpenInEditor}
-                  className="px-4 py-2.5 rounded-xl border border-[#DDD7CB] hover:bg-stone-100 text-[#1F1E1C] font-semibold flex items-center space-x-1.5 cursor-pointer"
-                >
-                  <Edit2 className="w-3.5 h-3.5 text-[#E15A42]" />
-                  <span>Открыть в редакторе</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleSaveImmediately}
-                  className="px-5 py-2.5 rounded-xl bg-[#E15A42] hover:bg-[#D04E37] text-white font-bold shadow-md flex items-center space-x-2 cursor-pointer transition-all"
-                >
-                  <Check className="w-4 h-4" />
-                  <span>Сохранить в книгу рецептов</span>
-                </button>
-              </div>
             </div>
           )}
         </div>
+
+        {/* Закрепленный подвал с кнопками, если рецепт успешно распознан */}
+        {parsedRecipe && (
+          <div className="px-6 py-4 border-t border-[#E8E2D4] bg-white flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
+            <div className="flex items-center space-x-2 text-xs text-[#7A746B]">
+              <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
+              <span>Рецепт переведен и адаптирован для домашней кухни</span>
+            </div>
+
+            <div className="flex flex-wrap items-center space-x-2 sm:space-x-3 w-full sm:w-auto justify-end">
+              <button
+                type="button"
+                onClick={handleOpenInEditor}
+                className="flex-1 sm:flex-initial px-3.5 py-2.5 rounded-xl border border-[#DDD7CB] hover:bg-stone-100 text-[#1F1E1C] font-semibold flex items-center justify-center space-x-1.5 cursor-pointer text-xs"
+              >
+                <Edit2 className="w-3.5 h-3.5 text-[#E15A42]" />
+                <span>В редактор</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveAndAddToShopping}
+                className="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:brightness-105 active:scale-[0.99] text-white font-bold shadow-md flex items-center justify-center space-x-1.5 cursor-pointer transition-all text-xs"
+                title="Сохранить рецепт и сразу добавить ингредиенты в список покупок"
+              >
+                <ShoppingCart className="w-3.5 h-3.5" />
+                <span>+ В покупки</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveImmediately}
+                className="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#E15A42] to-amber-600 hover:brightness-105 active:scale-[0.99] text-white font-bold shadow-md flex items-center justify-center space-x-1.5 cursor-pointer transition-all text-xs"
+              >
+                <Check className="w-4 h-4" />
+                <span>Сохранить рецепт</span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

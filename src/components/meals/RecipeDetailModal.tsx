@@ -42,10 +42,31 @@ export const RecipeDetailModal: React.FC<RecipeDetailModalProps> = ({
   const [isAddingToPlan, setIsAddingToPlan] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
+  const [selectedIngs, setSelectedIngs] = useState<Record<number, boolean>>({});
+
+  React.useEffect(() => {
+    if (!recipe) return;
+    const initialMap: Record<number, boolean> = {};
+    recipe.ingredients.forEach((ing, idx) => {
+      const n = (ing.name || '').toLowerCase();
+      const isStaple =
+        n === 'соль' ||
+        n === 'морская соль' ||
+        n === 'вода' ||
+        n === 'перец черный' ||
+        n === 'черный перец';
+      initialMap[idx] = !isStaple;
+    });
+    setSelectedIngs(initialMap);
+  }, [recipe]);
+
   if (!isOpen || !recipe) return null;
 
   const handleImportIngredients = () => {
-    importRecipeIngredientsToShopping(recipe, selectedListId);
+    const indices = Object.entries(selectedIngs)
+      .filter(([_, checked]) => checked)
+      .map(([idx]) => Number(idx));
+    importRecipeIngredientsToShopping(recipe, selectedListId, indices);
   };
 
   const handleAssignToPlan = () => {
@@ -147,38 +168,120 @@ export const RecipeDetailModal: React.FC<RecipeDetailModalProps> = ({
 
           <p className="text-xs text-[#5C564B] leading-relaxed">{recipe.description}</p>
 
-          {/* Ингредиенты с кнопкой отправки в список покупок */}
+          {/* Ингредиенты с интерактивным выбором и отправкой в список покупок */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h4 className="text-sm font-bold text-[#1F1D1A] flex items-center space-x-1.5">
-                <span>Ингредиенты</span>
-                <span className="text-xs font-normal text-[#8A8477]">
-                  ({recipe.ingredients.length} шт.)
-                </span>
-              </h4>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h4 className="text-sm font-bold text-[#1F1D1A] flex items-center space-x-1.5">
+                  <span>Ингредиенты</span>
+                  <span className="text-xs font-normal text-[#8A8477]">
+                    ({recipe.ingredients.length} шт.)
+                  </span>
+                </h4>
+                <div className="flex items-center space-x-2 mt-1 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const all: Record<number, boolean> = {};
+                      recipe.ingredients.forEach((_, idx) => (all[idx] = true));
+                      setSelectedIngs(all);
+                    }}
+                    className="text-[#E15A42] hover:underline font-semibold cursor-pointer"
+                  >
+                    Выбрать все
+                  </button>
+                  <span className="text-stone-300">•</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const stapleLess: Record<number, boolean> = {};
+                      recipe.ingredients.forEach((ing, idx) => {
+                        const n = ing.name.toLowerCase();
+                        stapleLess[idx] =
+                          !n.includes('соль') &&
+                          !n.includes('вода') &&
+                          !n.includes('перец');
+                      });
+                      setSelectedIngs(stapleLess);
+                    }}
+                    className="text-stone-600 hover:text-stone-900 font-semibold cursor-pointer"
+                  >
+                    Снять соль и воду
+                  </button>
+                  <span className="text-stone-300">•</span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedIngs({})}
+                    className="text-stone-500 hover:underline cursor-pointer"
+                  >
+                    Очистить
+                  </button>
+                </div>
+              </div>
 
-              <button
-                type="button"
-                onClick={handleImportIngredients}
-                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:brightness-105 text-white text-xs font-semibold shadow-xs active:scale-[0.98] transition-all cursor-pointer"
-              >
-                <ShoppingCart className="w-3.5 h-3.5" />
-                <span>В список покупок</span>
-              </button>
+              {/* Выбор списка покупок и кнопка отправки */}
+              <div className="flex items-center space-x-2">
+                <select
+                  value={selectedListId}
+                  onChange={(e) => setSelectedListId(e.target.value)}
+                  className="px-2.5 py-1.5 rounded-xl border border-stone-200 text-xs font-semibold bg-white text-[#1F1D1A]"
+                >
+                  {shoppingLists.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  type="button"
+                  onClick={handleImportIngredients}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:brightness-105 text-white text-xs font-bold shadow-xs active:scale-[0.98] transition-all cursor-pointer whitespace-nowrap"
+                >
+                  <ShoppingCart className="w-3.5 h-3.5" />
+                  <span>В список ({Object.values(selectedIngs).filter(Boolean).length})</span>
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {recipe.ingredients.map((ing, i) => (
-                <div
-                  key={i}
-                  className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-[#EBE7DF] text-xs"
-                >
-                  <span className="font-medium text-[#1F1D1A]">{ing.name}</span>
-                  <span className="text-[11px] font-semibold text-[#8A8477] bg-[#F2EFE8] px-2 py-0.5 rounded-md">
-                    {ing.amount}
-                  </span>
-                </div>
-              ))}
+              {recipe.ingredients.map((ing, i) => {
+                const isChecked = selectedIngs[i] !== false;
+                return (
+                  <div
+                    key={i}
+                    onClick={() =>
+                      setSelectedIngs((prev) => ({
+                        ...prev,
+                        [i]: !prev[i],
+                      }))
+                    }
+                    className={`flex items-center justify-between p-2.5 rounded-xl border text-xs cursor-pointer select-none transition-all ${
+                      isChecked
+                        ? 'bg-white border-[#E15A42]/40 shadow-2xs text-[#1F1D1A]'
+                        : 'bg-stone-50 border-stone-200 text-stone-400 line-through'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-2 truncate">
+                      <div
+                        className={`w-4 h-4 rounded-md flex items-center justify-center shrink-0 transition-colors ${
+                          isChecked ? 'bg-[#E15A42] text-white' : 'border border-stone-300 bg-white'
+                        }`}
+                      >
+                        {isChecked && <Check className="w-3 h-3 stroke-[2.5]" />}
+                      </div>
+                      <span className="font-semibold truncate">{ing.name}</span>
+                    </div>
+                    <span
+                      className={`text-[11px] font-semibold px-2 py-0.5 rounded-md shrink-0 ml-1.5 ${
+                        isChecked ? 'bg-[#F2EFE8] text-[#8A8477]' : 'bg-stone-100 text-stone-400'
+                      }`}
+                    >
+                      {ing.amount}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
 

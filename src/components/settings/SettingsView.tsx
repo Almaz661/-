@@ -19,12 +19,29 @@ import {
   CheckCircle2,
   Smartphone,
   HardDrive,
+  Gauge,
+  Droplets,
+  AlertTriangle,
+  ShoppingBag,
+  CheckSquare,
+  FileText,
+  Cloud,
+  CloudOff,
+  Copy,
+  SlidersHorizontal,
+  UtensilsCrossed,
+  Calendar,
+  Pill,
+  Package,
+  Phone,
+  Receipt,
 } from 'lucide-react';
 import { useHousehold } from '../../context/HouseholdContext';
 import { MemberAvatar } from '../common/MemberAvatar';
 import { processAndResizeImage, getMemberInitials } from '../../utils/imageUtils';
 import { PWAInstallButton } from '../common/PWAInstallButton';
 import { clearAllCacheAndReload } from '../../utils/cacheUtils';
+import { AppModuleId } from '../../types';
 
 export const SettingsView: React.FC = () => {
   const {
@@ -38,11 +55,36 @@ export const SettingsView: React.FC = () => {
     exportBackupJson,
     importBackupJson,
     resetToDefaultData,
+    clearMeterReadings,
+    resetMetersToZero,
+    resetMetersToInitial,
+    clearShoppingItems,
+    clearTasks,
+    clearAllReceipts,
+    clearAllLocalStorageData,
+    meters,
+    tasks,
+    shoppingItems,
+    receipts,
     isOffline,
     offlineStats,
     syncOfflineData,
+    familyCode,
+    cloudSyncStatus,
+    lastCloudSync,
+    connectFamilyCode,
+    generateNewFamilyCode,
+    disconnectFamilyCode,
+    syncWithCloud,
+    visibleModules,
+    toggleModuleVisibility,
     showToast,
   } = useHousehold();
+
+  const [inputFamilyCode, setInputFamilyCode] = useState('');
+  const [isConnectingCode, setIsConnectingCode] = useState(false);
+  const [isGeneratingCode, setIsGeneratingCode] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
 
   const [isSyncingIDB, setIsSyncingIDB] = useState(false);
 
@@ -66,6 +108,13 @@ export const SettingsView: React.FC = () => {
   const newMemberPhotoInputRef = useRef<HTMLInputElement>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showCacheConfirm, setShowCacheConfirm] = useState(false);
+  const [confirmModal, setConfirmModal] = useState<{
+    title: string;
+    description: string;
+    confirmLabel: string;
+    isDanger?: boolean;
+    onConfirm: () => void;
+  } | null>(null);
 
   const startEditMember = (member: any) => {
     setEditingMemberId(member.id);
@@ -222,7 +271,252 @@ export const SettingsView: React.FC = () => {
         )}
       </div>
 
-      {/* 2. Члены семьи / Профили */}
+      {/* 2. СЕМЕЙНОЕ ОБЛАКО: Синхронизация между устройствами (iPad, смартфоны) */}
+      <div className="bg-white rounded-3xl p-6 border border-[#EBE7DF] shadow-xs space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#F0ECE1]">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-sky-500 to-indigo-600 text-white flex items-center justify-center shadow-md shadow-sky-500/20">
+              <Cloud className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-sm sm:text-base text-[#1F1D1A]">
+                Семейное облако и синхронизация
+              </h3>
+              <p className="text-xs text-[#8A8477]">
+                Единая база данных для iPad на стене и смартфонов домочадцев в магазине
+              </p>
+            </div>
+          </div>
+
+          <div>
+            {familyCode ? (
+              <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <span className={`w-2 h-2 rounded-full ${cloudSyncStatus === 'syncing' ? 'bg-amber-400 animate-ping' : 'bg-emerald-500'}`} />
+                <span>{cloudSyncStatus === 'syncing' ? 'Синхронизация...' : 'Облако активно'}</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-stone-100 text-stone-600 border border-stone-200">
+                <CloudOff className="w-3.5 h-3.5" />
+                <span>Локальный режим</span>
+              </span>
+            )}
+          </div>
+        </div>
+
+        {familyCode ? (
+          <div className="space-y-4">
+            <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-[#FAF8F3] to-[#F3EFE6] border border-[#E8E2D4] flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <span className="text-xs text-[#8A8477] font-semibold uppercase tracking-wider block mb-1">
+                  Код вашей семьи для подключения устройств:
+                </span>
+                <div className="flex items-center space-x-3">
+                  <span className="font-mono text-2xl font-black text-[#1F1D1A] tracking-widest bg-white px-4 py-1.5 rounded-xl border border-stone-200 shadow-2xs">
+                    {familyCode}
+                  </span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard?.writeText(familyCode);
+                      setCopiedCode(true);
+                      showToast('Семейный код скопирован!', 'success');
+                      setTimeout(() => setCopiedCode(false), 2500);
+                    }}
+                    className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-stone-50 border border-stone-200 text-xs font-bold text-[#1F1D1A] shadow-2xs cursor-pointer transition-all active:scale-95"
+                  >
+                    {copiedCode ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4 text-stone-600" />}
+                    <span>{copiedCode ? 'Скопировано!' : 'Копировать'}</span>
+                  </button>
+                </div>
+                {lastCloudSync && (
+                  <p className="text-[11px] text-[#8A8477] mt-2">
+                    Посл. синхронизация: {new Date(lastCloudSync).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={async () => {
+                    await syncWithCloud();
+                  }}
+                  disabled={cloudSyncStatus === 'syncing'}
+                  className="flex items-center space-x-1.5 px-4 py-2.5 rounded-xl bg-white hover:bg-[#FAF8F3] border border-stone-300 text-xs font-bold text-[#1F1D1A] shadow-2xs cursor-pointer transition-all active:scale-95 disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-[#E15A42] ${cloudSyncStatus === 'syncing' ? 'animate-spin' : ''}`} />
+                  <span>Обновить сейчас</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setConfirmModal({
+                      title: 'Отключить синхронизацию?',
+                      description: 'Данные останутся на этом устройстве, но перестанут обновляться между членами семьи.',
+                      confirmLabel: 'Отключить',
+                      isDanger: false,
+                      onConfirm: () => {
+                        disconnectFamilyCode();
+                        setConfirmModal(null);
+                      },
+                    });
+                  }}
+                  className="px-3 py-2 text-xs text-stone-500 hover:text-rose-600 font-semibold cursor-pointer"
+                >
+                  Отключить
+                </button>
+              </div>
+            </div>
+
+            <p className="text-xs text-[#8A8477] bg-blue-50/70 border border-blue-100 p-3 rounded-xl text-blue-900 leading-relaxed">
+              💡 <strong>Как подключить iPad или телефон супруга:</strong> Откройте сайт на другом устройстве, перейдите в «Настройки» → введите код <strong>{familyCode}</strong> и нажмите «Подключиться». Списки покупок, рецепты и показания счётчиков будут синхронизироваться моментально.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Генерация нового кода */}
+              <div className="p-5 rounded-2xl bg-[#FAF8F3] border border-[#E8E2D4] flex flex-col justify-between">
+                <div>
+                  <h4 className="font-bold text-sm text-[#1F1D1A] mb-1">
+                    Создать новую семью в облаке
+                  </h4>
+                  <p className="text-xs text-[#8A8477] mb-4">
+                    Создаст персональный семейный код (например HAUS-7K2X) и загрузит текущие списки и данные в безопасное облако.
+                  </p>
+                </div>
+                <button
+                  onClick={async () => {
+                    setIsGeneratingCode(true);
+                    try {
+                      await generateNewFamilyCode();
+                    } finally {
+                      setIsGeneratingCode(false);
+                    }
+                  }}
+                  disabled={isGeneratingCode}
+                  className="w-full flex items-center justify-center space-x-2 py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#E15A42] to-[#EA7038] text-white font-bold text-xs shadow-md shadow-orange-500/20 hover:brightness-105 active:scale-98 transition-all cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>{isGeneratingCode ? 'Создание...' : 'Создать код для семьи'}</span>
+                </button>
+              </div>
+
+              {/* Ввод существующего кода */}
+              <div className="p-5 rounded-2xl bg-[#FAF8F3] border border-[#E8E2D4] flex flex-col justify-between">
+                <div>
+                  <h4 className="font-bold text-sm text-[#1F1D1A] mb-1">
+                    Подключиться по коду семьи
+                  </h4>
+                  <p className="text-xs text-[#8A8477] mb-3">
+                    Если код уже создан на другом устройстве (на iPad или телефоне домочадца).
+                  </p>
+                </div>
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    if (!inputFamilyCode.trim()) return;
+                    setIsConnectingCode(true);
+                    try {
+                      const ok = await connectFamilyCode(inputFamilyCode.trim());
+                      if (ok) setInputFamilyCode('');
+                    } finally {
+                      setIsConnectingCode(false);
+                    }
+                  }}
+                  className="flex space-x-2"
+                >
+                  <input
+                    type="text"
+                    value={inputFamilyCode}
+                    onChange={(e) => setInputFamilyCode(e.target.value.toUpperCase())}
+                    placeholder="HAUS-XXXX"
+                    className="flex-1 px-3 py-2 rounded-xl bg-white border border-stone-300 text-xs font-mono font-bold tracking-wider uppercase text-center"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isConnectingCode || !inputFamilyCode.trim()}
+                    className="px-4 py-2 rounded-xl bg-[#1F1D1A] text-white font-bold text-xs hover:bg-stone-800 disabled:opacity-50 cursor-pointer transition-all"
+                  >
+                    {isConnectingCode ? 'Вход...' : 'Войти'}
+                  </button>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 3. НАСТРОЙКА РАЗДЕЛОВ И МЕНЮ (КАСТОМИЗАЦИЯ ИНТЕРФЕЙСА) */}
+      <div className="bg-white rounded-3xl p-6 border border-[#EBE7DF] shadow-xs space-y-4">
+        <div className="flex items-center space-x-3 pb-3 border-b border-[#F0ECE1]">
+          <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center">
+            <SlidersHorizontal className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="font-bold text-sm sm:text-base text-[#1F1D1A]">
+              Настройка меню и видимости модулей
+            </h3>
+            <p className="text-xs text-[#8A8477]">
+              Оставьте включёнными только нужные разделы для чистого экрана на планшете
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {[
+            { id: 'tasks' as AppModuleId, title: 'Задачи и рутины', desc: 'Уборка, зоны, бытовые дела', icon: CheckSquare },
+            { id: 'calendar' as AppModuleId, title: 'Календарь семьи', desc: 'События, кружки, праздники', icon: Calendar },
+            { id: 'shopping' as AppModuleId, title: 'Список покупок', desc: 'Продукты, чеки, супермаркет', icon: ShoppingBag },
+            { id: 'meals' as AppModuleId, title: 'Питание и рецепты', desc: 'Умный импорт, меню на неделю', icon: UtensilsCrossed },
+            { id: 'utilities' as AppModuleId, title: 'Счётчики ЖКХ', desc: 'Вода, свет, авторасчёт дельт', icon: Gauge },
+            { id: 'receipts' as AppModuleId, title: 'Сканер чеков', desc: 'AI-распознавание позиций и цен', icon: Receipt },
+            { id: 'firstaid' as AppModuleId, title: 'Домашняя аптечка', desc: 'Сроки годности лекарств, дозировки', icon: Pill },
+            { id: 'inventory' as AppModuleId, title: 'Инвентарь и кладовая', desc: 'Бытовая химия, запасы, вещи', icon: Package },
+            { id: 'docs' as AppModuleId, title: 'Документы и полисы', desc: 'Паспорта, договоры, напоминания', icon: FileText },
+            { id: 'contacts' as AppModuleId, title: 'Контакты мастеров', desc: 'Сантехники, электрики, УК', icon: Phone },
+          ].map((mod) => {
+            const isVisible = visibleModules[mod.id] !== false;
+            const Icon = mod.icon;
+            return (
+              <div
+                key={mod.id}
+                onClick={() => toggleModuleVisibility(mod.id)}
+                className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between select-none ${
+                  isVisible
+                    ? 'bg-white border-[#E8E2D4] hover:border-[#E15A42]/50 shadow-2xs'
+                    : 'bg-[#FAF8F3]/60 border-stone-200 opacity-60 hover:opacity-80'
+                }`}
+              >
+                <div className="flex items-center space-x-3">
+                  <div
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+                      isVisible ? 'bg-[#FAF6EE] text-[#E15A42]' : 'bg-stone-200 text-stone-500'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h5 className="font-bold text-xs text-[#1F1D1A]">{mod.title}</h5>
+                    <p className="text-[11px] text-[#8A8477]">{mod.desc}</p>
+                  </div>
+                </div>
+
+                <div
+                  className={`w-11 h-6 flex items-center rounded-full p-1 duration-300 ease-in-out cursor-pointer ${
+                    isVisible ? 'bg-[#E15A42]' : 'bg-stone-300'
+                  }`}
+                >
+                  <div
+                    className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-300 ease-in-out ${
+                      isVisible ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 4. Члены семьи / Профили */}
       <div className="bg-white rounded-3xl p-6 border border-[#EBE7DF] shadow-xs space-y-4">
         <div className="flex items-center justify-between pb-3 border-b border-[#F0ECE1]">
           <div className="flex items-center space-x-3">
@@ -661,18 +955,18 @@ export const SettingsView: React.FC = () => {
         </div>
       </div>
 
-      {/* 4. Резервное копирование и сброс */}
+      {/* 4. Резервное копирование и экспорт */}
       <div className="bg-white rounded-3xl p-6 border border-[#EBE7DF] shadow-xs space-y-4">
         <div className="pb-3 border-b border-[#F0ECE1]">
           <h3 className="font-bold text-sm text-[#1F1D1A]">
-            Резервное копирование и управление данными
+            Резервное копирование данных
           </h3>
           <p className="text-xs text-[#8A8477]">
-            Все ваши задачи, рецепты, документы и списки хранятся в браузере (LocalStorage). Вы можете выгрузить или восстановить их в любой момент.
+            Выгрузите резервную копию со всеми задачами, рецептами, документами и списками в JSON-файл или загрузите её на другое устройство.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {/* Экспорт */}
           <button
             onClick={exportBackupJson}
@@ -706,43 +1000,327 @@ export const SettingsView: React.FC = () => {
             <RefreshCw className="w-4 h-4 text-amber-600" />
             <span>Очистить кэш браузера</span>
           </button>
+        </div>
+      </div>
 
-          {/* Сброс */}
-          <button
-            onClick={() => setShowResetConfirm(true)}
-            className="flex items-center justify-center space-x-2 p-3 rounded-2xl bg-rose-50/50 border border-rose-200 hover:bg-rose-100/50 text-xs font-semibold text-rose-800 transition-all cursor-pointer shadow-2xs"
-          >
-            <RotateCcw className="w-4 h-4 text-rose-600" />
-            <span>Сброс к демо</span>
-          </button>
+      {/* 5. Управление хранилищем и сброс данных */}
+      <div className="bg-white rounded-3xl p-6 border border-[#EBE7DF] shadow-xs space-y-6">
+        <div className="pb-3 border-b border-[#F0ECE1] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <div className="flex items-center space-x-2">
+              <Trash2 className="w-5 h-5 text-rose-600" />
+              <h3 className="font-bold text-sm text-[#1F1D1A]">
+                Управление хранилищем и сброс данных
+              </h3>
+            </div>
+            <p className="text-xs text-[#8A8477] mt-0.5">
+              Модульная очистка устаревших замеров, обнуление счётчиков или выборочный сброс разделов без потери остальных данных
+            </p>
+          </div>
+        </div>
+
+        {/* Блок 5.1: Счётчики ЖКХ и история замеров */}
+        <div className="p-4 rounded-2xl bg-[#FAF8F3] border border-[#E8E2D4] space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-[#EDE7DB]">
+            <div className="flex items-center space-x-2">
+              <Gauge className="w-4 h-4 text-[#E15A42]" />
+              <h4 className="font-bold text-xs text-[#1F1D1A]">Счётчики ЖКХ и история показаний</h4>
+            </div>
+            <div className="flex items-center space-x-2 text-[11px] text-[#6B6456]">
+              <span className="bg-white px-2 py-0.5 rounded-md border border-[#DDD7CB]">
+                Счётчиков: <strong>{meters.length}</strong>
+              </span>
+              <span className="bg-white px-2 py-0.5 rounded-md border border-[#DDD7CB]">
+                Замеров в базе: <strong>{meters.reduce((acc, m) => acc + m.readings.length, 0)}</strong>
+              </span>
+            </div>
+          </div>
+
+          <p className="text-xs text-[#6B6456] leading-relaxed">
+            Если старые показания больше не актуальны или нужно начать новый расчётный цикл:
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+            {/* Очистить только историю замеров */}
+            <button
+              type="button"
+              onClick={() =>
+                setConfirmModal({
+                  title: 'Очистить историю показаний счётчиков?',
+                  description:
+                    'Все сохранённые замеры за прошлые месяцы будут удалены. Сами приборы учёта (названия, серийные номера и тарифы) останутся на месте, а базой станет их начальное значение.',
+                  confirmLabel: 'Очистить историю',
+                  isDanger: true,
+                  onConfirm: () => clearMeterReadings(),
+                })
+              }
+              className="p-3 rounded-xl bg-white border border-[#DDD7CB] hover:border-rose-300 hover:bg-rose-50/40 text-left transition-all cursor-pointer shadow-2xs group"
+            >
+              <div className="flex items-center space-x-2 text-xs font-bold text-[#1F1E1C] group-hover:text-rose-700">
+                <Trash2 className="w-3.5 h-3.5 text-stone-400 group-hover:text-rose-600 shrink-0" />
+                <span>Очистить историю</span>
+              </div>
+              <p className="text-[11px] text-[#8C867D] mt-1 leading-normal">
+                Удалить ежемесячные замеры, сохранив приборы и тарифы
+              </p>
+            </button>
+
+            {/* Обнулить счётчики (сброс базы в 0) */}
+            <button
+              type="button"
+              onClick={() =>
+                setConfirmModal({
+                  title: 'Обнулить все счётчики ЖКХ в 0?',
+                  description:
+                    'История замеров будет очищена, а начальные базовые показания всех счётчиков будут выставлены в 0. Это удобно при переезде в новую квартиру или установке новых приборов учёта.',
+                  confirmLabel: 'Обнулить до 0',
+                  isDanger: true,
+                  onConfirm: () => resetMetersToZero(),
+                })
+              }
+              className="p-3 rounded-xl bg-white border border-[#DDD7CB] hover:border-amber-300 hover:bg-amber-50/40 text-left transition-all cursor-pointer shadow-2xs group"
+            >
+              <div className="flex items-center space-x-2 text-xs font-bold text-[#1F1E1C] group-hover:text-amber-800">
+                <RotateCcw className="w-3.5 h-3.5 text-stone-400 group-hover:text-amber-600 shrink-0" />
+                <span>Обнулить счётчики (в 0)</span>
+              </div>
+              <p className="text-[11px] text-[#8C867D] mt-1 leading-normal">
+                Сбросить базу всех приборов в 0 и очистить цепочку
+              </p>
+            </button>
+
+            {/* Восстановить демо-счётчики */}
+            <button
+              type="button"
+              onClick={() =>
+                setConfirmModal({
+                  title: 'Восстановить демонстрационные счётчики?',
+                  description:
+                    'Будет загружен стандартный демонстрационный комплект счётчиков (холодная/горячая вода, свет Т1/Т2, газ, отопление) с образцовыми показаниями и тарифами.',
+                  confirmLabel: 'Восстановить демо',
+                  isDanger: false,
+                  onConfirm: () => resetMetersToInitial(),
+                })
+              }
+              className="p-3 rounded-xl bg-white border border-[#DDD7CB] hover:border-blue-300 hover:bg-blue-50/40 text-left transition-all cursor-pointer shadow-2xs group"
+            >
+              <div className="flex items-center space-x-2 text-xs font-bold text-[#1F1E1C] group-hover:text-blue-800">
+                <RefreshCw className="w-3.5 h-3.5 text-stone-400 group-hover:text-blue-600 shrink-0" />
+                <span>Восстановить демо</span>
+              </div>
+              <p className="text-[11px] text-[#8C867D] mt-1 leading-normal">
+                Вернуть исходные образцовые показания и счётчики
+              </p>
+            </button>
+          </div>
+        </div>
+
+        {/* Блок 5.2: Список покупок, задачи и чеки */}
+        <div className="p-4 rounded-2xl bg-[#FAF8F3] border border-[#E8E2D4] space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-[#EDE7DB]">
+            <div className="flex items-center space-x-2">
+              <ShoppingBag className="w-4 h-4 text-emerald-600" />
+              <h4 className="font-bold text-xs text-[#1F1D1A]">Покупки, задачи и архив чеков</h4>
+            </div>
+            <div className="flex items-center space-x-2 text-[11px] text-[#6B6456]">
+              <span className="bg-white px-2 py-0.5 rounded-md border border-[#DDD7CB]">
+                Покупок: <strong>{shoppingItems.length}</strong> ({shoppingItems.filter((i) => i.completed).length} куплено)
+              </span>
+              <span className="bg-white px-2 py-0.5 rounded-md border border-[#DDD7CB]">
+                Задач: <strong>{tasks.length}</strong>
+              </span>
+              <span className="bg-white px-2 py-0.5 rounded-md border border-[#DDD7CB]">
+                Чеков: <strong>{receipts.length}</strong>
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+            {/* Очистить купленные товары */}
+            <button
+              type="button"
+              disabled={shoppingItems.filter((i) => i.completed).length === 0}
+              onClick={() =>
+                setConfirmModal({
+                  title: 'Удалить купленные товары?',
+                  description:
+                    'Все вычеркнутые (купленные) позиции будут удалены из всех списков. Некупленные товары останутся на месте.',
+                  confirmLabel: 'Удалить купленные',
+                  isDanger: false,
+                  onConfirm: () => clearShoppingItems(true),
+                })
+              }
+              className="p-3 rounded-xl bg-white border border-[#DDD7CB] hover:bg-stone-50 disabled:opacity-50 text-left transition-all cursor-pointer shadow-2xs"
+            >
+              <div className="flex items-center space-x-1.5 text-xs font-semibold text-[#1F1E1C]">
+                <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span>Удалить купленные</span>
+              </div>
+              <p className="text-[11px] text-[#8C867D] mt-1">
+                Очистить зачёркнутые позиции ({shoppingItems.filter((i) => i.completed).length})
+              </p>
+            </button>
+
+            {/* Очистить весь список покупок */}
+            <button
+              type="button"
+              disabled={shoppingItems.length === 0}
+              onClick={() =>
+                setConfirmModal({
+                  title: 'Очистить весь список покупок?',
+                  description: 'Все товары во всех списках будут безвозвратно удалены.',
+                  confirmLabel: 'Очистить весь список',
+                  isDanger: true,
+                  onConfirm: () => clearShoppingItems(false),
+                })
+              }
+              className="p-3 rounded-xl bg-white border border-[#DDD7CB] hover:bg-rose-50/40 hover:border-rose-200 disabled:opacity-50 text-left transition-all cursor-pointer shadow-2xs group"
+            >
+              <div className="flex items-center space-x-1.5 text-xs font-semibold text-[#1F1E1C] group-hover:text-rose-700">
+                <Trash2 className="w-3.5 h-3.5 text-stone-400 group-hover:text-rose-600 shrink-0" />
+                <span>Очистить покупки</span>
+              </div>
+              <p className="text-[11px] text-[#8C867D] mt-1">
+                Удалить все {shoppingItems.length} товаров из списков
+              </p>
+            </button>
+
+            {/* Очистить выполненные задачи */}
+            <button
+              type="button"
+              disabled={tasks.filter((t) => t.completed).length === 0}
+              onClick={() =>
+                setConfirmModal({
+                  title: 'Очистить выполненные задачи?',
+                  description:
+                    'Все завершённые задачи будут удалены из списка и базы данных. Текущие активные задачи сохранятся.',
+                  confirmLabel: 'Очистить архив',
+                  isDanger: false,
+                  onConfirm: () => clearTasks(true),
+                })
+              }
+              className="p-3 rounded-xl bg-white border border-[#DDD7CB] hover:bg-stone-50 disabled:opacity-50 text-left transition-all cursor-pointer shadow-2xs"
+            >
+              <div className="flex items-center space-x-1.5 text-xs font-semibold text-[#1F1E1C]">
+                <CheckSquare className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                <span>Удалить сделанные задачи</span>
+              </div>
+              <p className="text-[11px] text-[#8C867D] mt-1">
+                Архив завершённых дел ({tasks.filter((t) => t.completed).length})
+              </p>
+            </button>
+
+            {/* Очистить архив чеков */}
+            <button
+              type="button"
+              disabled={receipts.length === 0}
+              onClick={() =>
+                setConfirmModal({
+                  title: 'Удалить все отсканированные чеки?',
+                  description:
+                    'Все чеки и их фотоснимки будут удалены из памяти браузера и хранилища IndexedDB.',
+                  confirmLabel: 'Удалить все чеки',
+                  isDanger: true,
+                  onConfirm: () => clearAllReceipts(),
+                })
+              }
+              className="p-3 rounded-xl bg-white border border-[#DDD7CB] hover:bg-rose-50/40 hover:border-rose-200 disabled:opacity-50 text-left transition-all cursor-pointer shadow-2xs group"
+            >
+              <div className="flex items-center space-x-1.5 text-xs font-semibold text-[#1F1E1C] group-hover:text-rose-700">
+                <FileText className="w-3.5 h-3.5 text-stone-400 group-hover:text-rose-600 shrink-0" />
+                <span>Очистить чеки</span>
+              </div>
+              <p className="text-[11px] text-[#8C867D] mt-1">
+                Удалить сохранённые чеки ({receipts.length})
+              </p>
+            </button>
+          </div>
+        </div>
+
+        {/* Блок 5.3: Полный сброс приложения */}
+        <div className="p-4 rounded-2xl bg-rose-50/30 border border-rose-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-0.5">
+            <div className="flex items-center space-x-1.5 text-rose-800 font-bold text-xs">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>Полный сброс данных приложения</span>
+            </div>
+            <p className="text-[11px] text-rose-900/80 leading-relaxed max-w-xl">
+              Если вы хотите вернуть систему в первоначальное состояние, вы можете сбросить все разделы к демонстрационным данным или полностью стереть локальное хранилище.
+            </p>
+          </div>
+
+          <div className="flex items-center space-x-2 shrink-0">
+            <button
+              type="button"
+              onClick={() =>
+                setConfirmModal({
+                  title: 'Сбросить все разделы к демо-данным?',
+                  description:
+                    'Все задачи, списки покупок, чеки, рецепты, лекарства и счётчики вернутся к исходному демонстрационному состоянию.',
+                  confirmLabel: 'Сбросить к демо',
+                  isDanger: true,
+                  onConfirm: () => resetToDefaultData(),
+                })
+              }
+              className="px-3.5 py-2 rounded-xl bg-white border border-rose-200 hover:bg-rose-50 text-rose-800 font-bold text-xs transition-colors cursor-pointer shadow-2xs"
+            >
+              Сброс к демо
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setConfirmModal({
+                  title: 'Полностью стереть хранилище (Hard Reset)?',
+                  description:
+                    'Все локальные данные во всех модулях будут стёрты безвозвратно. Рекомендуется сначала сделать экспорт в JSON.',
+                  confirmLabel: 'Стереть всё',
+                  isDanger: true,
+                  onConfirm: () => clearAllLocalStorageData(),
+                })
+              }
+              className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition-colors cursor-pointer shadow-2xs"
+            >
+              Стереть всё
+            </button>
+          </div>
         </div>
 
         {/* Конфиденциальность OneHaus */}
-        <div className="mt-4 p-4 rounded-2xl bg-[#FAF8F3] border border-[#EADFCF] flex items-center space-x-3 text-xs text-[#5C564B]">
+        <div className="p-4 rounded-2xl bg-[#FAF8F3] border border-[#EADFCF] flex items-center space-x-3 text-xs text-[#5C564B]">
           <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
           <span>
-            <strong>Конфиденциальность:</strong> Данные вашего дома принадлежат исключительно вам. Никаких платных подписок, трекеров или передачи информации третьим лицам.
+            <strong>Конфиденциальность:</strong> Все данные хранятся локально в вашем браузере. Вы всегда полностью контролируете хранилище, можете скачивать копии и стирать любые записи в 1 клик.
           </span>
         </div>
       </div>
 
-      {/* Модальное окно подтверждения сброса к демо */}
-      {showResetConfirm && (
+      {/* Универсальное модальное окно подтверждения сброса / очистки */}
+      {confirmModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-rose-100 text-center space-y-4 animate-in zoom-in-95 duration-150">
-            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
-              <RotateCcw className="w-6 h-6" />
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-stone-200 text-center space-y-4 animate-in zoom-in-95 duration-150">
+            <div
+              className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto ${
+                confirmModal.isDanger
+                  ? 'bg-rose-100 text-rose-600'
+                  : 'bg-amber-100 text-amber-700'
+              }`}
+            >
+              {confirmModal.isDanger ? (
+                <Trash2 className="w-6 h-6" />
+              ) : (
+                <AlertTriangle className="w-6 h-6" />
+              )}
             </div>
             <div>
-              <h3 className="text-base font-bold text-[#1F1E1C]">Сбросить все данные?</h3>
-              <p className="text-xs text-[#7A746B] mt-1">
-                Все задачи, списки покупок, чеки и рецепты будут возвращены к исходному демонстрационному состоянию.
+              <h3 className="text-base font-bold text-[#1F1E1C]">{confirmModal.title}</h3>
+              <p className="text-xs text-[#7A746B] mt-1.5 leading-relaxed">
+                {confirmModal.description}
               </p>
             </div>
             <div className="flex items-center space-x-2 pt-2">
               <button
                 type="button"
-                onClick={() => setShowResetConfirm(false)}
+                onClick={() => setConfirmModal(null)}
                 className="flex-1 py-2 px-3 rounded-xl border border-[#DDD8CD] text-xs font-semibold text-[#5A554D] hover:bg-[#F2EFE9] transition-colors cursor-pointer"
               >
                 Отмена
@@ -750,12 +1328,16 @@ export const SettingsView: React.FC = () => {
               <button
                 type="button"
                 onClick={() => {
-                  resetToDefaultData();
-                  setShowResetConfirm(false);
+                  confirmModal.onConfirm();
+                  setConfirmModal(null);
                 }}
-                className="flex-1 py-2 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
+                className={`flex-1 py-2 px-3 rounded-xl text-white text-xs font-bold shadow-sm transition-colors cursor-pointer ${
+                  confirmModal.isDanger
+                    ? 'bg-rose-600 hover:bg-rose-700'
+                    : 'bg-[#E15A42] hover:bg-[#D04931]'
+                }`}
               >
-                Сбросить
+                {confirmModal.confirmLabel}
               </button>
             </div>
           </div>
