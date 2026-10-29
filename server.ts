@@ -455,8 +455,8 @@ ${rawText ? `OCR текст чека (дополнительно):\n${rawText}\n
           responseMimeType: 'application/json',
           responseSchema: receiptSchema,
         },
-        timeoutMs: 25000,
-        preferredModels: ['gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-3.1-flash-lite'],
+        timeoutMs: 15000,
+        preferredModels: ['gemini-3.8-flash', 'gemini-3.1-flash-lite'],
       });
 
       const rawResponseText = response.text || '';
@@ -468,6 +468,16 @@ ${rawText ? `OCR текст чека (дополнительно):\n${rawText}\n
       return res.json(parsedData);
     } catch (err: any) {
       console.error('Ошибка Gemini при разборе чека:', err?.message || err);
+
+      // Если был передан rawText — пробуем серверный синтаксический разбор без сбоя
+      if (rawText && typeof rawText === 'string') {
+        try {
+          const { parseReceiptText } = await import('./src/services/receiptParser');
+          const fallbackData = parseReceiptText(rawText);
+          return res.json(fallbackData);
+        } catch (_) {}
+      }
+
       return res.status(500).json({
         error: 'Не удалось разобрать чек через Gemini API: ' + (err?.message || 'ошибка сети'),
       });
@@ -705,7 +715,10 @@ ${scrapedText.slice(0, 7500)}
   // Настройка Vite в dev режиме или раздача статики в prod
   if (isProd && hasDist) {
     app.use(express.static(distDir));
-    app.get('*', (_req, res) => {
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api/')) {
+        return next();
+      }
       res.sendFile(distIndex);
     });
   } else {
@@ -719,6 +732,21 @@ ${scrapedText.slice(0, 7500)}
       appType: 'spa',
     });
     app.use(vite.middlewares);
+
+    app.use('*', async (req, res, next) => {
+      if (req.originalUrl.startsWith('/api/')) {
+        return next();
+      }
+      try {
+        const url = req.originalUrl;
+        const indexPath = path.resolve(__dirname, 'index.html');
+        let template = fs.readFileSync(indexPath, 'utf-8');
+        template = await vite.transformIndexHtml(url, template);
+        res.status(200).set({ 'Content-Type': 'text/html' }).end(template);
+      } catch (e) {
+        next(e);
+      }
+    });
   }
 
   httpServer.listen(port, '0.0.0.0', () => {

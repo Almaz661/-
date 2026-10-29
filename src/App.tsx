@@ -23,6 +23,7 @@ import { ToastContainer } from './components/common/ToastContainer';
 import { OfflineStatusIndicator } from './components/common/OfflineStatusIndicator';
 import { BottomNav } from './components/layout/BottomNav';
 import { GlobalSearchModal } from './components/common/GlobalSearchModal';
+import { CleanStartModal } from './components/common/CleanStartModal';
 
 const MainApp: React.FC = () => {
   const { isSOSOpen, setIsSOSOpen } = useHousehold();
@@ -32,6 +33,9 @@ const MainApp: React.FC = () => {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
+  const [isCleanStartModalOpen, setIsCleanStartModalOpen] = useState(
+    () => !localStorage.getItem('onehaus_start_choice_done')
+  );
 
   // Определение заголовка текущей вкладки
   const getTabTitle = (tab: NavTab) => {
@@ -190,6 +194,12 @@ const MainApp: React.FC = () => {
           }}
         />
       )}
+
+      {/* Стартовое окно выбора режима (чистый старт / подключение к семье) */}
+      <CleanStartModal
+        isOpen={isCleanStartModalOpen}
+        onClose={() => setIsCleanStartModalOpen(false)}
+      />
 
       {/* Всплывающие уведомления (Тосты) */}
       <ToastContainer />

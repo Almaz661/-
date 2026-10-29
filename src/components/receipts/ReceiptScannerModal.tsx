@@ -91,6 +91,8 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
 
   // Скрытый input для галереи/файлов
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // Скрытый input для прямого вызова системной камеры мобильного устройства / iPad
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
 
   // Очистка при закрытии
   useEffect(() => {
@@ -128,10 +130,12 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
       }
       setIsCameraActive(true);
     } catch (err: any) {
-      console.warn('Не удалось получить прямой доступ к камере:', err);
+      console.warn('Не удалось получить прямой доступ к видеопотоку камеры:', err);
       setIsCameraActive(false);
-      // Fallback: предлагаем загрузку через системный файловый диалог (который на iOS/Android откроет камеру)
-      if (fileInputRef.current) {
+      // Fallback: мгновенно вызываем системную камеру устройства (iOS / Android / iPad)
+      if (cameraInputRef.current) {
+        cameraInputRef.current.click();
+      } else if (fileInputRef.current) {
         fileInputRef.current.click();
       }
     }
@@ -179,10 +183,16 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
     const fileList = Array.from(files);
     fileList.forEach((file) => {
       const reader = new FileReader();
-      reader.onload = (event) => {
+      reader.onload = async (event) => {
         const result = event.target?.result as string;
         if (result) {
-          addSegment(result);
+          try {
+            // Мгновенная адаптивная оптимизация до безопасных 2048px (предотвращает OOM в мобильном Safari)
+            const prepared = await prepareImageForOCR(result);
+            addSegment(prepared);
+          } catch {
+            addSegment(result);
+          }
         }
       };
       reader.readAsDataURL(file);
@@ -268,7 +278,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
     }
   };
 
-  // Запуск распознавания чека (Gemini AI без жестких шаблонов + резервный локальный OCR)
+  // Запуск распознавания чека (интеллектуальный Gemini AI + каскадный локальный OCR с отслеживанием прогресса)
   const handleStartOCR = async () => {
     if (segments.length === 0) {
       setErrorMessage('Пожалуйста, сделайте фото чека или выберите файл');
@@ -295,85 +305,21 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
         finalImage = await stitchReceiptSegments(segments, 15);
       }
 
-      setOcrProgress({
-        status: 'Оптимизация разрешения и контраста...',
-        progress: 35,
-        stage: 'init',
-      });
-      finalImage = await prepareImageForOCR(finalImage);
+      const langParam = selectedLanguage === 'auto' ? undefined : selectedLanguage;
 
-      // 1. Попытка распознавания через Gemini API
-      setOcrProgress({
-        status: 'Gemini AI распознаёт товары и автоматически категоризирует позиции...',
-        progress: 60,
-        stage: 'parsing',
-      });
+      // Запуск парсинга через объединенный сервис (Gemini с авто-переходом на Tesseract при офлайне)
+      const parsedReceipt = await parseReceiptWithGemini(
+        finalImage,
+        undefined,
+        langParam,
+        (progress) => setOcrProgress(progress)
+      );
 
-      let scannedReceipt: ScannedReceipt | null = null;
-      try {
-        const langParam = selectedLanguage === 'auto' ? undefined : selectedLanguage;
-        const aiResult = await parseReceiptWithGemini(finalImage, undefined, langParam);
-        if (aiResult && aiResult.items && aiResult.items.length > 0) {
-          scannedReceipt = {
-            ...aiResult,
-            qualityReport: qualityReport || undefined,
-            images: segments,
-          };
-        }
-      } catch (aiErr) {
-        console.warn('Gemini API не ответил, переключаемся на локальный OCR:', aiErr);
-      }
-
-      // 2. Если Gemini API не дал результата — резервный локальный tesseract worker
-      if (!scannedReceipt) {
-        setOcrProgress({
-          status: 'Локальное оптическое распознавание символов (OCR)...',
-          progress: 75,
-          stage: 'recognizing',
-        });
-
-        const effectiveOcrLang: ReceiptLanguage =
-          selectedLanguage === 'auto' ? 'nld' : selectedLanguage;
-
-        const ocrResult = await runLocalOCR(
-          finalImage,
-          effectiveOcrLang,
-          (progress) => setOcrProgress(progress)
-        );
-
-        setOcrProgress({
-          status: 'Синтаксический анализ и категоризация товаров...',
-          progress: 95,
-          stage: 'parsing',
-        });
-
-        const parsedData = parseReceiptText(
-          ocrResult.text,
-          selectedLanguage === 'auto' ? undefined : selectedLanguage
-        );
-        const effectiveLanguage =
-          parsedData.detectedLanguage ||
-          (selectedLanguage === 'auto' ? 'nld' : selectedLanguage);
-
-        scannedReceipt = {
-          id: 'receipt_' + Date.now().toString(36),
-          storeName: parsedData.storeName || 'Чек из супермаркета',
-          rawStoreName: parsedData.rawStoreName,
-          date: parsedData.date || new Date().toISOString().split('T')[0],
-          time: parsedData.time,
-          totalAmount: parsedData.totalAmount,
-          taxAmount: parsedData.taxAmount,
-          discountTotal: parsedData.discountTotal,
-          currency: parsedData.currency,
-          rawText: parsedData.rawText,
-          language: effectiveLanguage,
-          qualityReport: qualityReport || undefined,
-          images: segments,
-          items: parsedData.items,
-          scannedAt: new Date().toISOString(),
-          matchedSumDiff: parsedData.matchedSumDiff,
-        };
-      }
+      const scannedReceipt: ScannedReceipt = {
+        ...parsedReceipt,
+        qualityReport: qualityReport || undefined,
+        images: segments,
+      };
 
       // Передаем результат в экран проверки
       onReceiptParsed(scannedReceipt);
@@ -427,6 +373,15 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
             onChange={handleFileSelect}
             accept="image/*"
             multiple
+            className="hidden"
+          />
+          {/* Скрытый input для прямого снимка камерой мобильного устройства / iPad */}
+          <input
+            type="file"
+            ref={cameraInputRef}
+            onChange={handleFileSelect}
+            accept="image/*"
+            capture="environment"
             className="hidden"
           />
 
@@ -788,11 +743,19 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
                     <div className="flex items-center space-x-2 pt-2 border-t border-[#F2EFE9]">
                       <button
                         type="button"
-                        onClick={startCamera}
-                        className="flex-1 py-2 px-2.5 bg-[#FAF9F5] border border-[#DDD8CD] hover:border-[#BDB5A6] rounded-xl text-xs font-medium text-[#3D3A36] flex items-center justify-center space-x-1.5 transition-colors"
+                        onClick={() => cameraInputRef.current?.click()}
+                        className="flex-1 py-2 px-2.5 bg-[#FFF5F2] border border-orange-200 hover:border-[#E15A42] text-[#E15A42] rounded-xl text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors"
                       >
                         <Camera className="w-3.5 h-3.5" />
-                        <span>Снять след. часть</span>
+                        <span>Снять след. часть (Камера)</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={startCamera}
+                        className="p-2 bg-[#FAF9F5] border border-[#DDD8CD] hover:border-[#BDB5A6] rounded-xl text-[#3D3A36] transition-colors"
+                        title="Включить видеокамеру"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
                       </button>
                       <button
                         type="button"
@@ -809,21 +772,39 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
             </div>
           ) : (
             /* Начальное состояние: Выбор камеры или файла */
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 my-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 my-2">
+              <button
+                type="button"
+                onClick={() => cameraInputRef.current?.click()}
+                className="p-6 rounded-2xl border-2 border-dashed border-orange-300 bg-[#FFFDFB] hover:border-[#E15A42] hover:bg-[#FFF5F2] flex flex-col items-center justify-center text-center space-y-2.5 transition-all group shadow-xs"
+              >
+                <div className="w-14 h-14 rounded-2xl bg-[#FFF1ED] text-[#E15A42] flex items-center justify-center group-hover:scale-110 transition-transform shadow-xs">
+                  <Camera className="w-7 h-7" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-[#1F1E1C] text-sm group-hover:text-[#E15A42] transition-colors">
+                    Камера устройства
+                  </h3>
+                  <p className="text-[11px] text-[#7A746B] mt-0.5">
+                    Быстрый снимок на iPad, iPhone и Android
+                  </p>
+                </div>
+              </button>
+
               <button
                 type="button"
                 onClick={startCamera}
-                className="p-8 rounded-2xl border-2 border-dashed border-[#D6D0C3] bg-white hover:border-[#E15A42] hover:bg-[#FFF9F7] flex flex-col items-center justify-center text-center space-y-3 transition-all group shadow-xs"
+                className="p-6 rounded-2xl border-2 border-dashed border-[#D6D0C3] bg-white hover:border-[#E15A42] hover:bg-[#FFF9F7] flex flex-col items-center justify-center text-center space-y-2.5 transition-all group shadow-xs"
               >
-                <div className="w-16 h-16 rounded-2xl bg-[#FFF1ED] text-[#E15A42] flex items-center justify-center group-hover:scale-110 transition-transform shadow-xs">
-                  <Camera className="w-8 h-8" />
+                <div className="w-14 h-14 rounded-2xl bg-[#F0EFEB] text-[#555047] flex items-center justify-center group-hover:scale-110 group-hover:bg-[#FFF1ED] group-hover:text-[#E15A42] transition-all shadow-xs">
+                  <Eye className="w-7 h-7" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-[#1F1E1C] text-base group-hover:text-[#E15A42] transition-colors">
-                    Сфотографировать чек камерой
+                  <h3 className="font-bold text-[#1F1E1C] text-sm group-hover:text-[#E15A42] transition-colors">
+                    Видеосканер в окне
                   </h3>
-                  <p className="text-xs text-[#7A746B] mt-1 max-w-xs">
-                    Подходит для iPad, iPhone, Android, планшетов и веб-камер
+                  <p className="text-[11px] text-[#7A746B] mt-0.5">
+                    Живой видоискатель через веб-камеру
                   </p>
                 </div>
               </button>
@@ -831,17 +812,17 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="p-8 rounded-2xl border-2 border-dashed border-[#D6D0C3] bg-white hover:border-[#E15A42] hover:bg-[#FFF9F7] flex flex-col items-center justify-center text-center space-y-3 transition-all group shadow-xs"
+                className="p-6 rounded-2xl border-2 border-dashed border-[#D6D0C3] bg-white hover:border-[#E15A42] hover:bg-[#FFF9F7] flex flex-col items-center justify-center text-center space-y-2.5 transition-all group shadow-xs"
               >
-                <div className="w-16 h-16 rounded-2xl bg-[#F0EFEB] text-[#555047] flex items-center justify-center group-hover:scale-110 group-hover:bg-[#FFF1ED] group-hover:text-[#E15A42] transition-all shadow-xs">
-                  <Upload className="w-8 h-8" />
+                <div className="w-14 h-14 rounded-2xl bg-[#F0EFEB] text-[#555047] flex items-center justify-center group-hover:scale-110 group-hover:bg-[#FFF1ED] group-hover:text-[#E15A42] transition-all shadow-xs">
+                  <Upload className="w-7 h-7" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-[#1F1E1C] text-base group-hover:text-[#E15A42] transition-colors">
-                    Выбрать из галереи или файлов
+                  <h3 className="font-bold text-[#1F1E1C] text-sm group-hover:text-[#E15A42] transition-colors">
+                    Галерея и файлы
                   </h3>
-                  <p className="text-xs text-[#7A746B] mt-1 max-w-xs">
-                    JPG, PNG, HEIC или несколько фото длинного чека
+                  <p className="text-[11px] text-[#7A746B] mt-0.5">
+                    JPG, PNG, HEIC или несколько сегментов
                   </p>
                 </div>
               </button>

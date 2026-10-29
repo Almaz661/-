@@ -136,7 +136,7 @@ export const ReceiptsView: React.FC = () => {
   const handleDirectReceiptUpload = async (file: File) => {
     if (!file) return;
     setIsAiProcessing(true);
-    setAiStatusText('Загрузка изображения чека...');
+    setAiStatusText('Загрузка и оптимизация изображения чека...');
 
     try {
       const reader = new FileReader();
@@ -146,23 +146,30 @@ export const ReceiptsView: React.FC = () => {
         reader.readAsDataURL(file);
       });
 
-      setAiStatusText('Gemini AI распознаёт товары и категоризирует покупки без шаблонов...');
-      const parsed = await parseReceiptWithGemini(dataUrl);
+      const parsed = await parseReceiptWithGemini(
+        dataUrl,
+        undefined,
+        undefined,
+        (p) => setAiStatusText(p.status)
+      );
 
       setPendingReceipt(parsed);
       setIsReviewOpen(true);
       showToast(
-        `Gemini AI: распознано ${parsed.items.length} товаров на сумму ${parsed.totalAmount.toFixed(2)} ${parsed.currency}`,
+        `Распознано: ${parsed.items.length} товаров на сумму ${parsed.totalAmount.toFixed(2)} ${parsed.currency}`,
         'success'
       );
     } catch (err: any) {
-      console.error('Ошибка Gemini AI разбора чека:', err);
+      console.error('Ошибка разбора чека:', err);
       showToast('Не удалось разобрать чек: ' + (err?.message || 'ошибка сети'), 'error');
     } finally {
       setIsAiProcessing(false);
       setAiStatusText('');
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
+      }
+      if (cameraInputRef.current) {
+        cameraInputRef.current.value = '';
       }
     }
   };

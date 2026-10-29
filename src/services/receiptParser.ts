@@ -263,7 +263,7 @@ export function parsePriceFromLine(line: string): ParsedPriceResult | null {
  * Проверка на строку Итого / Оплаты
  */
 function isTotalOrPaymentKeyword(line: string): boolean {
-  return /(?:^|[\s:;.,!?\-_/\\()])(totaal|subtotaal|te\s*betalen|summe|gesamt|gesamtbetrag|endbetrag|zu\s*zahlen|betrag\b|razem|do\s*zap[lł]aty|suma|σύνολο|συνολο|πληρωτέο|итог[оа]?|к\s*оплате|всего|total|pin\b|betaald|betaalwijze|contant|bar\b|kartenzahlung|gegeven|wisselgeld|teruggave|r[uü]ckgeld|сдача|change\b)(?:$|[\s:;.,!?\-_/\\()])/i.test(
+  return /(?:^|[\s:;.,!?\-_/\\()])(totaal|subtotaal|te\s*betalen|summe|gesamt|gesamtbetrag|endbetrag|zu\s*zahlen|betrag\b|razem|do\s*zap[lł]aty|suma|σύνολο|συνολο|πληρωτέο|πληρωτεο|τελικό|τελικο|итог[оа]?|к\s*оплате|всего|total|pin\b|betaald|betaalwijze|contant|bar\b|kartenzahlung|gegeven|wisselgeld|teruggave|r[uü]ckgeld|сдача|change\b|μετρητά|μετρητα|κάρτα|καρτα)(?:$|[\s:;.,!?\-_/\\()])/i.test(
     line
   );
 }
@@ -424,10 +424,10 @@ function extractStoreName(
     };
   }
 
-  // 3. Поиск по юридическому названию (B.V., GmbH, Sp. z o.o., ООО, АО)
+  // 3. Поиск по юридическому названию (B.V., GmbH, Sp. z o.o., ООО, АО, Α.Ε., Ι.Κ.Ε.)
   for (let i = 0; i < Math.min(8, lines.length); i++) {
     const line = lines[i];
-    const legalMatch = line.match(/^([A-Za-zА-Яа-я0-9\s&]{3,35})\s+(?:B\.V\.|GmbH|Sp\.\s*z\s*o\.o\.|LLC|ООО|АО|A\.E\.)/i);
+    const legalMatch = line.match(/^([A-Za-zА-Яа-яΆ-ώΑ-Ωα-ω0-9\s&]{3,35})\s+(?:B\.V\.|GmbH|Sp\.\s*z\s*o\.o\.|LLC|ООО|АО|A\.E\.|Α\.Ε\.|Ι\.Κ\.Ε\.|Ε\.Π\.Ε\.)/i);
     if (legalMatch) {
       return {
         storeName: legalMatch[1].trim(),
@@ -475,7 +475,7 @@ function extractDateTime(text: string, lines: string[]): { date?: string; time?:
 
   for (const line of lines) {
     const prefixedMatch = line.match(
-      /(?:datum|date|дата|zeit|data)[\s:]*([0-3]?\d)[./\-](\d{1,2})[./\-](\d{2,4})\b/i
+      /(?:datum|date|дата|zeit|data|ημερομην[ιί]α|ημ\/?νια|ημερ)[\s:]*([0-3]?\d)[./\-](\d{1,2})[./\-](\d{2,4})\b/i
     );
     if (prefixedMatch) {
       date = normalizeDateParts(prefixedMatch[1], prefixedMatch[2], prefixedMatch[3]);
@@ -513,7 +513,7 @@ function extractDateTime(text: string, lines: string[]): { date?: string; time?:
     }
   }
 
-  const prefixedTime = text.match(/(?:tijd|zeit|время|time|uhr)[\s:]*([01]?\d|2[0-3])[:.]([0-5]\d)(?:[:.]([0-5]\d))?\b/i);
+  const prefixedTime = text.match(/(?:tijd|zeit|время|time|uhr|ωρα|ώρα)[\s:]*([01]?\d|2[0-3])[:.]([0-5]\d)(?:[:.]([0-5]\d))?\b/i);
   if (prefixedTime) {
     time = `${prefixedTime[1].padStart(2, '0')}:${prefixedTime[2]}`;
   } else {
@@ -569,11 +569,11 @@ function extractTotals(
 
   // Строгие финальные ключевые слова итоговой суммы (исключая subtotaal и промежуточные расчеты)
   const strictTotalKeywords =
-    /(?:^|[\s:;.,!?\-_/\\()#*])(totaal|te\s*betalen|summe|gesamt|gesamtbetrag|endbetrag|zu\s*zahlen|razem|do\s*zap[lł]aty|suma|σύνολο|συνολο|πληρωτέο|итог[оа]?|к\s*оплате|всего)(?:$|[\s:;.,!?\-_/\\()#*])/i;
+    /(?:^|[\s:;.,!?\-_/\\()#*])(totaal|te\s*betalen|summe|gesamt|gesamtbetrag|endbetrag|zu\s*zahlen|razem|do\s*zap[lł]aty|suma|σύνολο|συνολο|πληρωτέο|πληρωτεο|τελικό|τελικο|итог[оа]?|к\s*оплате|всего)(?:$|[\s:;.,!?\-_/\\()#*])/i;
   
   // Ключевые слова подтверждения фактической оплаты картой/наличными
   const paymentKeywords =
-    /(?:^|[\s:;.,!?\-_/\\()#*])(betaald|pin\b|pinpas|pinautomaat|kartenzahlung|bar\b|contant|gepind|transactiebedrag)(?:$|[\s:;.,!?\-_/\\()#*])/i;
+    /(?:^|[\s:;.,!?\-_/\\()#*])(betaald|pin\b|pinpas|pinautomaat|kartenzahlung|bar\b|contant|gepind|transactiebedrag|μετρητά|μετρητα|κάρτα|καρτα)(?:$|[\s:;.,!?\-_/\\()#*])/i;
   
   // Промежуточный подытог (до учета скидок)
   const subtotalKeywords =
@@ -777,10 +777,10 @@ function extractLineItems(
     const line = lines[i].trim();
     if (line.length === 0) continue;
 
-    // Как только чек доходит до секции итогов (SUBTOTAAL, TOTAAL, PIN, ИТОГО),
+    // Как только чек доходит до секции итогов (SUBTOTAAL, TOTAAL, PIN, ИТОГО, ΣΥΝΟΛΟ),
     // все последующие строки относятся к расчету, налогам и чековому подвалу
     if (
-      /(?:^|[\s:;.,!?\-_/\\()#*])(subtotaal|subtotal|zwischensumme|totaal|te\s*betalen|summe|gesamt|gesamtbetrag|endbetrag|zu\s*zahlen|razem|do\s*zap[lł]aty|suma|σύνολο|итог[оа]?|к\s*оплате|всего|pin\b|pinpas|betaald|kartenzahlung|contant)\b/i.test(
+      /(?:^|[\s:;.,!?\-_/\\()#*])(subtotaal|subtotal|zwischensumme|totaal|te\s*betalen|summe|gesamt|gesamtbetrag|endbetrag|zu\s*zahlen|razem|do\s*zap[lł]aty|suma|σύνολο|συνολο|πληρωτέο|πληρωτεο|τελικό|τελικο|итог[оа]?|к\s*оплате|всего|pin\b|pinpas|betaald|kartenzahlung|contant|μετρητά|μετρητα|κάρτα|καρτα)\b/i.test(
         line
       )
     ) {

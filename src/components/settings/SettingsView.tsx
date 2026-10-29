@@ -35,6 +35,7 @@ import {
   Package,
   Phone,
   Receipt,
+  Globe,
 } from 'lucide-react';
 import { useHousehold } from '../../context/HouseholdContext';
 import { MemberAvatar } from '../common/MemberAvatar';
@@ -55,6 +56,11 @@ export const SettingsView: React.FC = () => {
     exportBackupJson,
     importBackupJson,
     resetToDefaultData,
+    startCleanHousehold,
+    householdRegion,
+    setHouseholdRegion,
+    householdCurrency,
+    setHouseholdCurrency,
     clearMeterReadings,
     resetMetersToZero,
     resetMetersToInitial,
@@ -269,6 +275,105 @@ export const SettingsView: React.FC = () => {
             </button>
           </div>
         )}
+      </div>
+
+      {/* Регион, валюта и изоляция дома */}
+      <div className="bg-white rounded-3xl p-6 border border-[#EBE7DF] shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#F0ECE1]">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center">
+              <Globe className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-sm text-[#1F1D1A]">Регион и валюта вашего дома</h3>
+              <p className="text-xs text-[#8A8477]">
+                Каждая семья автономна. Родственники в Греции и РФ настраивают свои дома независимо, в своей валюте.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              setHouseholdRegion('GR');
+              setHouseholdCurrency('EUR');
+              showToast('Регион переключен на Грецию (валюта EUR €)', 'success');
+            }}
+            className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
+              householdRegion === 'GR'
+                ? 'border-[#E15A42] bg-[#FFF5F2] ring-2 ring-[#E15A42]/20 shadow-xs'
+                : 'border-[#EAE6DD] bg-white hover:border-[#D0C9BD]'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-base font-bold text-[#1F1D1A]">🇬🇷 Греция / ЕС</span>
+              <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">EUR (€)</span>
+            </div>
+            <p className="text-[11px] text-[#7A746B]">
+              Счета и чеки в евро (€), супермаркеты Σκλαβενίτης/Lidl, экстренные службы Греции 112/166 EKAB
+            </p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setHouseholdRegion('RU');
+              setHouseholdCurrency('RUB');
+              showToast('Регион переключен на Россию (валюта RUB ₽)', 'success');
+            }}
+            className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
+              householdRegion === 'RU'
+                ? 'border-[#E15A42] bg-[#FFF5F2] ring-2 ring-[#E15A42]/20 shadow-xs'
+                : 'border-[#EAE6DD] bg-white hover:border-[#D0C9BD]'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-base font-bold text-[#1F1D1A]">🇷🇺 Россия</span>
+              <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">RUB (₽)</span>
+            </div>
+            <p className="text-[11px] text-[#7A746B]">
+              Счета и чеки в рублях (₽), супермаркеты Пятёрочка/ВкусВилл, службы 112/103/104
+            </p>
+          </button>
+        </div>
+      </div>
+
+      {/* Быстрый старт: Очистить все демонстрационные данные */}
+      <div className="bg-gradient-to-r from-orange-50 via-amber-50 to-[#FAF6EE] border border-orange-200/80 rounded-3xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xs">
+        <div className="space-y-1">
+          <div className="flex items-center space-x-2">
+            <span className="text-base">✨</span>
+            <h4 className="font-bold text-sm text-[#1F1D1A]">
+              Чистый старт для вашей семьи
+            </h4>
+          </div>
+          <p className="text-xs text-[#6B6456] leading-relaxed max-w-xl">
+            Удалит демонстрационные имена («Анна, Михаил»), чужие тестовые счётчики (186 м³), чеки и задачи. Оставит абсолютно чистое пространство для вашей реальной семьи.
+          </p>
+        </div>
+
+        <div className="flex items-center space-x-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              setConfirmModal({
+                title: 'Начать с чистого листа?',
+                description: 'Все демонстрационные имена, чужие показания счётчиков, тестовые чеки и задачи будут удалены. Вы сможете внести данные вашей семьи с нуля.',
+                confirmLabel: 'Очистить всё и начать с нуля',
+                isDanger: true,
+                onConfirm: () => {
+                  startCleanHousehold();
+                  setConfirmModal(null);
+                },
+              });
+            }}
+            className="px-4 py-2.5 rounded-xl bg-[#E15A42] hover:bg-[#D04E37] text-white text-xs font-bold shadow-xs cursor-pointer transition-all active:scale-95 whitespace-nowrap"
+          >
+            Очистить все демо-данные
+          </button>
+        </div>
       </div>
 
       {/* 2. СЕМЕЙНОЕ ОБЛАКО: Синхронизация между устройствами (iPad, смартфоны) */}

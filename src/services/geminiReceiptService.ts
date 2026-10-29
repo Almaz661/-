@@ -1,6 +1,7 @@
 import { ScannedReceipt, ReceiptItemLine, ReceiptLanguage } from '../types';
 import { parseReceiptText } from './receiptParser';
-import { runLocalOCR } from './ocrService';
+import { runLocalOCR, OCRProgress } from './ocrService';
+import { prepareImageForOCR } from '../utils/receiptImageProcessor';
 
 export interface GeminiReceiptResponse {
   storeName?: string;
@@ -19,22 +20,52 @@ export interface GeminiReceiptResponse {
  * Отправляет чек на серверный эндпоинт с Gemini API для интеллектуального
  * распознавания и автоматической категоризации (продукты, бытовая химия и т.д.)
  * без жестких шаблонов.
+ *
+ * Автоматически сжимает/оптимизирует изображение перед передачей, предотвращая
+ * сбои на мобильных устройствах и планшетах (iPad / iPhone) при фото высокого разрешения.
  */
 export async function parseReceiptWithGemini(
-  imageBase64: string,
+  imageBase64?: string,
   rawText?: string,
-  languageHint?: string
+  languageHint?: string,
+  onProgress?: (progress: OCRProgress) => void
 ): Promise<ScannedReceipt> {
   const receiptId = 'receipt_' + Date.now().toString(36);
 
+  // 1. Подготовка и сжатие изображения (до безопасных 2048px) перед отправкой
+  let optimizedImage = imageBase64;
+  if (optimizedImage && optimizedImage.length > 300000) {
+    try {
+      if (onProgress) {
+        onProgress({
+          status: 'Оптимизация разрешения фото для быстрой отправки...',
+          progress: 25,
+          stage: 'init',
+        });
+      }
+      optimizedImage = await prepareImageForOCR(optimizedImage);
+    } catch (prepErr) {
+      console.warn('Не удалось сжать фото перед отправкой, отправляем оригинал:', prepErr);
+    }
+  }
+
+  // 2. Вызов серверного Gemini API
   try {
+    if (onProgress) {
+      onProgress({
+        status: 'Gemini AI распознаёт товары и автоматически категоризирует позиции...',
+        progress: 60,
+        stage: 'parsing',
+      });
+    }
+
     const res = await fetch('/api/ai/parse-receipt', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        imageBase64,
+        imageBase64: optimizedImage,
         rawText,
         languageHint,
       }),
@@ -44,7 +75,7 @@ export async function parseReceiptWithGemini(
       const data: GeminiReceiptResponse = await res.json();
       if (data && data.items && data.items.length > 0) {
         // Подсчет сходимости
-        const sumItems = data.items.reduce((s, it) => s + (it.totalPrice || 0), 0);
+        const sumItems = Math.round(data.items.reduce((s, it) => s + (it.totalPrice || 0), 0) * 100) / 100;
         const diff = Math.round(Math.abs(sumItems - (data.totalAmount || 0)) * 100) / 100;
 
         return {
@@ -56,20 +87,20 @@ export async function parseReceiptWithGemini(
           totalAmount: typeof data.totalAmount === 'number' ? data.totalAmount : sumItems,
           taxAmount: data.taxAmount,
           discountTotal: data.discountTotal,
-          currency: data.currency || 'EUR',
+          currency: data.currency || (languageHint === 'rus' ? 'RUB' : 'EUR'),
           rawText: rawText || '',
           language: data.language || (languageHint as ReceiptLanguage) || 'nld',
-          images: imageBase64 ? [imageBase64] : [],
+          images: optimizedImage ? [optimizedImage] : [],
           items: data.items.map((it, idx) => ({
             id: it.id || `gemini_item_${idx}_${Date.now().toString(36)}`,
             originalText: it.originalText || it.normalizedTitle,
             normalizedTitle: it.normalizedTitle || it.originalText,
-            quantity: it.quantity || 1,
+            quantity: typeof it.quantity === 'number' && it.quantity > 0 ? it.quantity : 1,
             unit: it.unit || 'шт',
             unitPrice: it.unitPrice || it.totalPrice,
             totalPrice: it.totalPrice || 0,
             discount: it.discount,
-            currency: it.currency || data.currency || 'EUR',
+            currency: it.currency || data.currency || (languageHint === 'rus' ? 'RUB' : 'EUR'),
             category: it.category || 'other',
             confidence: it.confidence || 95,
             status: 'verified',
@@ -80,20 +111,36 @@ export async function parseReceiptWithGemini(
         };
       }
     }
-    console.warn('Серверный Gemini API вернул неполные данные или ошибку, применяем резервный разбор.');
+    console.warn('Серверный Gemini API вернул пустой результат или ошибку, применяем локальный OCR.');
   } catch (err) {
     console.warn('Ошибка вызова Gemini API на сервере:', err);
   }
 
-  // Резервный локальный разбор: если текст не был передан, пробуем локальный OCR
+  // 3. Резервный локальный разбор через Tesseract OCR + синтаксический анализатор
   let textToParse = rawText;
-  if (!textToParse && imageBase64) {
+  if (!textToParse && optimizedImage) {
     try {
-      const ocr = await runLocalOCR(imageBase64, (languageHint as ReceiptLanguage) || 'nld');
+      if (onProgress) {
+        onProgress({
+          status: 'Локальное распознавание OCR (Tesseract)...',
+          progress: 75,
+          stage: 'recognizing',
+        });
+      }
+      const effectiveLang = (languageHint as ReceiptLanguage) || 'nld';
+      const ocr = await runLocalOCR(optimizedImage, effectiveLang, onProgress);
       textToParse = ocr?.text || '';
     } catch (ocrErr) {
       console.warn('Локальный OCR fallback не удался:', ocrErr);
     }
+  }
+
+  if (onProgress) {
+    onProgress({
+      status: 'Синтаксический анализ и категоризация товаров...',
+      progress: 95,
+      stage: 'parsing',
+    });
   }
 
   const fallbackData = parseReceiptText(textToParse || '', (languageHint as ReceiptLanguage) || undefined);
@@ -106,10 +153,10 @@ export async function parseReceiptWithGemini(
     totalAmount: fallbackData.totalAmount,
     taxAmount: fallbackData.taxAmount,
     discountTotal: fallbackData.discountTotal,
-    currency: fallbackData.currency || 'EUR',
+    currency: fallbackData.currency || (languageHint === 'rus' ? 'RUB' : 'EUR'),
     rawText: textToParse || '',
     language: fallbackData.detectedLanguage || (languageHint as ReceiptLanguage) || 'nld',
-    images: imageBase64 ? [imageBase64] : [],
+    images: optimizedImage ? [optimizedImage] : [],
     items: fallbackData.items,
     scannedAt: new Date().toISOString(),
     matchedSumDiff: fallbackData.matchedSumDiff,

@@ -67,6 +67,13 @@ interface ToastMessage {
   message: string;
 }
 
+export interface CleanHouseholdOptions {
+  householdName?: string;
+  ownerName?: string;
+  region?: 'GR' | 'RU' | 'EU' | 'OTHER';
+  currency?: 'EUR' | 'RUB' | 'USD';
+}
+
 interface HouseholdContextType {
   // Offline & IndexedDB State
   isOffline: boolean;
@@ -204,6 +211,13 @@ interface HouseholdContextType {
   exportBackupJson: () => void;
   importBackupJson: (jsonString: string) => boolean;
   resetToDefaultData: () => void;
+  startCleanHousehold: (options?: CleanHouseholdOptions) => void;
+
+  // Регион и валюта домохозяйства (для автономных семей в Греции, РФ и др.)
+  householdRegion: 'GR' | 'RU' | 'EU' | 'OTHER';
+  setHouseholdRegion: (region: 'GR' | 'RU' | 'EU' | 'OTHER') => void;
+  householdCurrency: 'EUR' | 'RUB' | 'USD';
+  setHouseholdCurrency: (currency: 'EUR' | 'RUB' | 'USD') => void;
 
   // Family Cloud Sync (Облачная семейная синхронизация)
   familyCode: string | null;
@@ -280,7 +294,17 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, React.Dispatch<Re
 }
 
 export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [householdName, setHouseholdName] = useLocalStorage<string>('household_name', 'Наш тёплый дом');
+  const [householdName, setHouseholdName] = useLocalStorage<string>('household_name', 'Наш дом');
+  const [householdRegion, setHouseholdRegion] = useLocalStorage<'GR' | 'RU' | 'EU' | 'OTHER'>('household_region', 'RU');
+  const [householdCurrency, setHouseholdCurrencyState] = useLocalStorage<'EUR' | 'RUB' | 'USD'>('household_currency', 'RUB');
+
+  const setHouseholdCurrency = (curr: 'EUR' | 'RUB' | 'USD') => {
+    setHouseholdCurrencyState(curr);
+    try {
+      localStorage.setItem('onehaus_utility_currency', curr === 'EUR' ? '€' : curr === 'USD' ? '$' : '₽');
+    } catch (_) {}
+  };
+
   const [members, setMembers] = useLocalStorage<FamilyMember[]>('members', INITIAL_MEMBERS);
   const [activeMemberId, setActiveMemberId] = useState<string | null>(null);
 
@@ -646,9 +670,9 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const effectiveDate = dateStr || new Date().toISOString().split('T')[0];
         const month = effectiveDate.substring(0, 7);
 
-        // Ищем существующую запись за этот месяц или день
+        // Ищем существующую запись за эту же дату для обновления, иначе добавляем новое показание
         const existingIdx = meter.readings.findIndex(
-          (r) => r.month === month || r.date === effectiveDate
+          (r) => r.date === effectiveDate
         );
 
         let newReadingsList: UtilityReading[];
@@ -1883,6 +1907,184 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     showToast('Данные сброшены к исходному демонстрационному состоянию', 'info');
   };
 
+  const startCleanHousehold = (options?: CleanHouseholdOptions) => {
+    const region = options?.region || householdRegion || 'RU';
+    const currency = options?.currency || (region === 'GR' ? 'EUR' : 'RUB');
+    const name = options?.householdName?.trim() || (region === 'GR' ? 'Наш дом в Греции' : 'Наш дом');
+    const owner = options?.ownerName?.trim() || 'Я';
+
+    setHouseholdRegion(region);
+    setHouseholdCurrency(currency);
+    setHouseholdName(name);
+
+    setMembers([
+      {
+        id: 'member-owner',
+        name: owner,
+        role: 'Владелец',
+        color: {
+          bg: 'bg-orange-50',
+          text: 'text-[#E15A42]',
+          border: 'border-orange-200',
+          hex: '#E15A42',
+          badgeBg: 'bg-orange-100',
+        },
+      },
+    ]);
+    setActiveMemberId('member-owner');
+    setTasks([]);
+    setEvents([]);
+    setShoppingLists(
+      region === 'GR'
+        ? [
+            { id: 'list-supermarket', name: 'Σούπερ μάρκετ (Супермаркет)', icon: '🛒' },
+            { id: 'list-pharmacy', name: 'Φαρμακείο (Аптека)', icon: '💊' },
+          ]
+        : [
+            { id: 'list-supermarket', name: 'Супермаркет', icon: '🛒' },
+            { id: 'list-pharmacy', name: 'Аптека', icon: '💊' },
+          ]
+    );
+    setActiveShoppingListId('list-supermarket');
+    setShoppingItems([]);
+    setInventory([]);
+    setDocs([]);
+    setReceipts([]);
+    setMedicines([]);
+
+    // Автономные контакты экстренных служб под выбранную страну
+    if (region === 'GR') {
+      setContacts([
+        {
+          id: 'contact-gr-112',
+          name: 'Европейская служба 112',
+          specialty: 'Экстренная помощь (Ευρωπαϊκός αριθμός έκτακτης ανάγκης)',
+          category: 'emergency',
+          phone: '112',
+        },
+        {
+          id: 'contact-gr-166',
+          name: 'ΕΚΑΒ (Скорая помощь Греции)',
+          specialty: 'Медицинская неотложка',
+          category: 'emergency',
+          phone: '166',
+        },
+        {
+          id: 'contact-gr-199',
+          name: 'Πυροσβεστική (Пожарная служба)',
+          specialty: 'Пожарная охрана Греции',
+          category: 'emergency',
+          phone: '199',
+        },
+        {
+          id: 'contact-gr-100',
+          name: 'Αστυνομία (Полиция)',
+          specialty: 'Полиция Греции',
+          category: 'emergency',
+          phone: '100',
+        },
+      ]);
+    } else {
+      setContacts([
+        {
+          id: 'contact-ru-112',
+          name: 'Единая служба спасения 112',
+          specialty: 'Экстренная помощь МЧС',
+          category: 'emergency',
+          phone: '112',
+        },
+        {
+          id: 'contact-ru-103',
+          name: 'Скорая медицинская помощь',
+          specialty: 'Неотложная помощь',
+          category: 'emergency',
+          phone: '103',
+        },
+        {
+          id: 'contact-ru-101',
+          name: 'Пожарная охрана',
+          specialty: 'МЧС',
+          category: 'emergency',
+          phone: '101',
+        },
+        {
+          id: 'contact-ru-104',
+          name: 'Аварийная служба газа',
+          specialty: 'Утечка газа',
+          category: 'emergency',
+          phone: '104',
+        },
+      ]);
+    }
+
+    // Чистые счетчики с тарифами региона
+    if (region === 'GR' || currency === 'EUR') {
+      setMeters([
+        {
+          id: 'meter-cold-water',
+          name: 'Холодная вода (Νερό)',
+          type: 'cold_water',
+          unit: 'м³',
+          tariffRate: 1.45,
+          initialValue: 0,
+          readings: [],
+        },
+        {
+          id: 'meter-hot-water',
+          name: 'Горячая вода (Ζεστό νερό)',
+          type: 'hot_water',
+          unit: 'м³',
+          tariffRate: 4.8,
+          initialValue: 0,
+          readings: [],
+        },
+        {
+          id: 'meter-electricity',
+          name: 'Электроэнергия (Ρεύμα)',
+          type: 'electricity_single',
+          unit: 'кВт⋅ч',
+          tariffRate: 0.22,
+          initialValue: 0,
+          readings: [],
+        },
+      ]);
+    } else {
+      setMeters([
+        {
+          id: 'meter-cold-water',
+          name: 'Холодная вода',
+          type: 'cold_water',
+          unit: 'м³',
+          tariffRate: 50.93,
+          initialValue: 0,
+          readings: [],
+        },
+        {
+          id: 'meter-hot-water',
+          name: 'Горячая вода',
+          type: 'hot_water',
+          unit: 'м³',
+          tariffRate: 243.16,
+          initialValue: 0,
+          readings: [],
+        },
+        {
+          id: 'meter-electricity',
+          name: 'Электроэнергия',
+          type: 'electricity_single',
+          unit: 'кВт⋅ч',
+          tariffRate: 6.73,
+          initialValue: 0,
+          readings: [],
+        },
+      ]);
+    }
+
+    saveAllTasksToIDB([]).catch(() => {});
+    saveAllEventsToIDB([]).catch(() => {});
+    showToast(`Пространство «${name}» создано с чистого листа! Ваши данные хранятся изолированно.`, 'success');
+  };
+
   return (
     <HouseholdContext.Provider
       value={{
@@ -1985,6 +2187,11 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         exportBackupJson,
         importBackupJson,
         resetToDefaultData,
+        startCleanHousehold,
+        householdRegion,
+        setHouseholdRegion,
+        householdCurrency,
+        setHouseholdCurrency,
         familyCode,
         cloudSyncStatus,
         lastCloudSync,
