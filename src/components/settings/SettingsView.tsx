@@ -43,6 +43,9 @@ import { processAndResizeImage, getMemberInitials } from '../../utils/imageUtils
 import { PWAInstallButton } from '../common/PWAInstallButton';
 import { clearAllCacheAndReload } from '../../utils/cacheUtils';
 import { AppModuleId } from '../../types';
+import { COUNTRY_PRESETS, getCountryPresetById } from '../../utils/countryPresets';
+import { SUPPORTED_CURRENCIES, getCurrencySymbol } from '../../utils/currencyConstants';
+import { CleanStartModal } from '../common/CleanStartModal';
 
 export const SettingsView: React.FC = () => {
   const {
@@ -114,6 +117,7 @@ export const SettingsView: React.FC = () => {
   const newMemberPhotoInputRef = useRef<HTMLInputElement>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showCacheConfirm, setShowCacheConfirm] = useState(false);
+  const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{
     title: string;
     description: string;
@@ -277,66 +281,124 @@ export const SettingsView: React.FC = () => {
         )}
       </div>
 
-      {/* Регион, валюта и изоляция дома */}
-      <div className="bg-white rounded-3xl p-6 border border-[#EBE7DF] shadow-xs space-y-4">
+      {/* Страна, валюта и автономность дома (по всему миру) */}
+      <div className="bg-white rounded-3xl p-6 border border-[#EBE7DF] shadow-xs space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#F0ECE1]">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center">
               <Globe className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-sm text-[#1F1D1A]">Регион и валюта вашего дома</h3>
+              <h3 className="font-bold text-sm text-[#1F1D1A]">Страна и валюта вашего дома</h3>
               <p className="text-xs text-[#8A8477]">
-                Каждая семья автономна. Родственники в Греции и РФ настраивают свои дома независимо, в своей валюте.
+                Вы можете находиться в любой стране мира. Данные изолированы и не объединяются между семьями.
               </p>
             </div>
           </div>
+          <button
+            type="button"
+            onClick={() => setIsWizardOpen(true)}
+            className="px-3.5 py-1.5 rounded-xl bg-orange-100 hover:bg-orange-200/80 text-[#E15A42] font-bold text-xs flex items-center space-x-1.5 self-start sm:self-auto cursor-pointer transition-colors"
+          >
+            <span>Мастер настройки</span>
+            <span className="text-base">✨</span>
+          </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <button
-            type="button"
-            onClick={() => {
-              setHouseholdRegion('GR');
-              setHouseholdCurrency('EUR');
-              showToast('Регион переключен на Грецию (валюта EUR €)', 'success');
-            }}
-            className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
-              householdRegion === 'GR'
-                ? 'border-[#E15A42] bg-[#FFF5F2] ring-2 ring-[#E15A42]/20 shadow-xs'
-                : 'border-[#EAE6DD] bg-white hover:border-[#D0C9BD]'
-            }`}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-base font-bold text-[#1F1D1A]">🇬🇷 Греция / ЕС</span>
-              <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">EUR (€)</span>
-            </div>
-            <p className="text-[11px] text-[#7A746B]">
-              Счета и чеки в евро (€), супермаркеты Σκλαβενίτης/Lidl, экстренные службы Греции 112/166 EKAB
+        {/* Текущий выбор и селекторы */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Селектор страны */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-[#554F44]">
+              Страна расположения дома:
+            </label>
+            <select
+              value={householdRegion}
+              onChange={(e) => {
+                const newRegion = e.target.value;
+                const preset = getCountryPresetById(newRegion);
+                setHouseholdRegion(newRegion);
+                setHouseholdCurrency(preset.defaultCurrency);
+                showToast(`Страна дома изменена: ${preset.flag} ${preset.name} (${preset.defaultCurrency})`, 'success');
+              }}
+              className="w-full px-3.5 py-2.5 bg-[#FAF8F3] border border-[#DDD7CB] rounded-2xl text-xs font-bold text-[#1F1D1A] focus:outline-none focus:border-[#E15A42] cursor-pointer"
+            >
+              {COUNTRY_PRESETS.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.flag} {p.name} ({p.defaultCurrency})
+                </option>
+              ))}
+            </select>
+            <p className="text-[10px] text-[#8A8477]">
+              {getCountryPresetById(householdRegion).description}
             </p>
-          </button>
+          </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              setHouseholdRegion('RU');
-              setHouseholdCurrency('RUB');
-              showToast('Регион переключен на Россию (валюта RUB ₽)', 'success');
-            }}
-            className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
-              householdRegion === 'RU'
-                ? 'border-[#E15A42] bg-[#FFF5F2] ring-2 ring-[#E15A42]/20 shadow-xs'
-                : 'border-[#EAE6DD] bg-white hover:border-[#D0C9BD]'
-            }`}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-base font-bold text-[#1F1D1A]">🇷🇺 Россия</span>
-              <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">RUB (₽)</span>
-            </div>
-            <p className="text-[11px] text-[#7A746B]">
-              Счета и чеки в рублях (₽), супермаркеты Пятёрочка/ВкусВилл, службы 112/103/104
+          {/* Селектор валюты */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-[#554F44]">
+              Основная валюта (чеки, расходы, ЖКХ):
+            </label>
+            <select
+              value={householdCurrency}
+              onChange={(e) => {
+                const newCurr = e.target.value;
+                setHouseholdCurrency(newCurr);
+                showToast(`Основная валюта изменена на ${newCurr} (${getCurrencySymbol(newCurr)})`, 'success');
+              }}
+              className="w-full px-3.5 py-2.5 bg-[#FAF8F3] border border-[#DDD7CB] rounded-2xl text-xs font-bold text-[#1F1D1A] focus:outline-none focus:border-[#E15A42] cursor-pointer"
+            >
+              {SUPPORTED_CURRENCIES.map((c) => (
+                <option key={c.code} value={c.code}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-[10px] text-[#8A8477]">
+              Текущий знак валюты в отчётах и графиках: <strong className="text-[#E15A42]">{getCurrencySymbol(householdCurrency)}</strong>
             </p>
-          </button>
+          </div>
+        </div>
+
+        {/* Быстрые кнопки популярных стран */}
+        <div className="space-y-1.5 pt-1">
+          <label className="text-[11px] font-semibold text-[#8A8477] uppercase tracking-wider block">
+            Быстрое переключение:
+          </label>
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              { id: 'CY', flag: '🇨🇾', name: 'Кипр', curr: 'EUR' },
+              { id: 'GR', flag: '🇬🇷', name: 'Греция', curr: 'EUR' },
+              { id: 'RU', flag: '🇷🇺', name: 'Россия', curr: 'RUB' },
+              { id: 'EU', flag: '🇪🇺', name: 'Евросоюз', curr: 'EUR' },
+              { id: 'AE', flag: '🇦🇪', name: 'ОАЭ', curr: 'AED' },
+              { id: 'TR', flag: '🇹🇷', name: 'Турция', curr: 'TRY' },
+              { id: 'GE', flag: '🇬🇪', name: 'Грузия', curr: 'GEL' },
+              { id: 'TH', flag: '🇹🇭', name: 'Таиланд', curr: 'THB' },
+              { id: 'US', flag: '🇺🇸', name: 'США', curr: 'USD' },
+              { id: 'GB', flag: '🇬🇧', name: 'Великобритания', curr: 'GBP' },
+              { id: 'KZ', flag: '🇰🇿', name: 'Казахстан', curr: 'KZT' },
+              { id: 'OTHER', flag: '🌐', name: 'Другая страна', curr: 'USD' },
+            ].map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => {
+                  setHouseholdRegion(item.id);
+                  setHouseholdCurrency(item.curr);
+                  showToast(`Выбрано: ${item.flag} ${item.name} (${item.curr})`, 'info');
+                }}
+                className={`px-2.5 py-1.5 rounded-xl border text-xs font-semibold flex items-center space-x-1.5 cursor-pointer transition-all ${
+                  householdRegion === item.id
+                    ? 'border-[#E15A42] bg-[#FFF5F2] text-[#E15A42] ring-1 ring-[#E15A42]'
+                    : 'border-stone-200 bg-stone-50/70 hover:bg-stone-100 text-stone-700'
+                }`}
+              >
+                <span>{item.flag}</span>
+                <span>{item.name}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -1484,6 +1546,12 @@ export const SettingsView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Модальное окно мастера настройки для любой страны мира */}
+      <CleanStartModal
+        isOpen={isWizardOpen}
+        onClose={() => setIsWizardOpen(false)}
+      />
     </div>
   );
 };

@@ -60,6 +60,8 @@ import {
 import { normalizeProductTitle } from '../utils/receiptNormalizer';
 import { parseShoppingInput } from '../utils/shoppingParser';
 import { recalculateMeterReadings, getPreviousReadingForMeter } from '../utils/utilityCalculations';
+import { getCountryPresetById, CountryPreset } from '../utils/countryPresets';
+import { getCurrencySymbol } from '../utils/currencyConstants';
 
 interface ToastMessage {
   id: string;
@@ -70,8 +72,9 @@ interface ToastMessage {
 export interface CleanHouseholdOptions {
   householdName?: string;
   ownerName?: string;
-  region?: 'GR' | 'RU' | 'EU' | 'OTHER';
-  currency?: 'EUR' | 'RUB' | 'USD';
+  region?: string;
+  currency?: string;
+  countryName?: string;
 }
 
 interface HouseholdContextType {
@@ -213,11 +216,11 @@ interface HouseholdContextType {
   resetToDefaultData: () => void;
   startCleanHousehold: (options?: CleanHouseholdOptions) => void;
 
-  // Регион и валюта домохозяйства (для автономных семей в Греции, РФ и др.)
-  householdRegion: 'GR' | 'RU' | 'EU' | 'OTHER';
-  setHouseholdRegion: (region: 'GR' | 'RU' | 'EU' | 'OTHER') => void;
-  householdCurrency: 'EUR' | 'RUB' | 'USD';
-  setHouseholdCurrency: (currency: 'EUR' | 'RUB' | 'USD') => void;
+  // Регион и валюта домохозяйства (для автономных семей в любой стране мира)
+  householdRegion: string;
+  setHouseholdRegion: (region: string) => void;
+  householdCurrency: string;
+  setHouseholdCurrency: (currency: string) => void;
 
   // Family Cloud Sync (Облачная семейная синхронизация)
   familyCode: string | null;
@@ -295,13 +298,13 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, React.Dispatch<Re
 
 export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [householdName, setHouseholdName] = useLocalStorage<string>('household_name', 'Наш дом');
-  const [householdRegion, setHouseholdRegion] = useLocalStorage<'GR' | 'RU' | 'EU' | 'OTHER'>('household_region', 'RU');
-  const [householdCurrency, setHouseholdCurrencyState] = useLocalStorage<'EUR' | 'RUB' | 'USD'>('household_currency', 'RUB');
+  const [householdRegion, setHouseholdRegion] = useLocalStorage<string>('household_region', 'RU');
+  const [householdCurrency, setHouseholdCurrencyState] = useLocalStorage<string>('household_currency', 'RUB');
 
-  const setHouseholdCurrency = (curr: 'EUR' | 'RUB' | 'USD') => {
+  const setHouseholdCurrency = (curr: string) => {
     setHouseholdCurrencyState(curr);
     try {
-      localStorage.setItem('onehaus_utility_currency', curr === 'EUR' ? '€' : curr === 'USD' ? '$' : '₽');
+      localStorage.setItem('onehaus_utility_currency', getCurrencySymbol(curr));
     } catch (_) {}
   };
 
@@ -1909,8 +1912,9 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const startCleanHousehold = (options?: CleanHouseholdOptions) => {
     const region = options?.region || householdRegion || 'RU';
-    const currency = options?.currency || (region === 'GR' ? 'EUR' : 'RUB');
-    const name = options?.householdName?.trim() || (region === 'GR' ? 'Наш дом в Греции' : 'Наш дом');
+    const preset = getCountryPresetById(region);
+    const currency = options?.currency || preset.defaultCurrency || 'USD';
+    const name = options?.householdName?.trim() || (options?.countryName ? `Наш дом (${options.countryName})` : preset.name !== 'Любая другая страна мира' ? `Наш дом (${preset.name})` : 'Наш дом');
     const owner = options?.ownerName?.trim() || 'Я';
 
     setHouseholdRegion(region);
@@ -1934,17 +1938,16 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setActiveMemberId('member-owner');
     setTasks([]);
     setEvents([]);
-    setShoppingLists(
-      region === 'GR'
-        ? [
-            { id: 'list-supermarket', name: 'Σούπερ μάρκετ (Супермаркет)', icon: '🛒' },
-            { id: 'list-pharmacy', name: 'Φαρμακείο (Аптека)', icon: '💊' },
-          ]
-        : [
-            { id: 'list-supermarket', name: 'Супермаркет', icon: '🛒' },
-            { id: 'list-pharmacy', name: 'Аптека', icon: '💊' },
-          ]
-    );
+    
+    // Списки покупок для выбранной страны
+    if (preset.defaultShoppingLists && preset.defaultShoppingLists.length > 0) {
+      setShoppingLists(preset.defaultShoppingLists);
+    } else {
+      setShoppingLists([
+        { id: 'list-supermarket', name: 'Супермаркет', icon: '🛒' },
+        { id: 'list-pharmacy', name: 'Аптека', icon: '💊' },
+      ]);
+    }
     setActiveShoppingListId('list-supermarket');
     setShoppingItems([]);
     setInventory([]);
@@ -1953,101 +1956,41 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setMedicines([]);
 
     // Автономные контакты экстренных служб под выбранную страну
-    if (region === 'GR') {
-      setContacts([
-        {
-          id: 'contact-gr-112',
-          name: 'Европейская служба 112',
-          specialty: 'Экстренная помощь (Ευρωπαϊκός αριθμός έκτακτης ανάγκης)',
-          category: 'emergency',
-          phone: '112',
-        },
-        {
-          id: 'contact-gr-166',
-          name: 'ΕΚΑΒ (Скорая помощь Греции)',
-          specialty: 'Медицинская неотложка',
-          category: 'emergency',
-          phone: '166',
-        },
-        {
-          id: 'contact-gr-199',
-          name: 'Πυροσβεστική (Пожарная служба)',
-          specialty: 'Пожарная охрана Греции',
-          category: 'emergency',
-          phone: '199',
-        },
-        {
-          id: 'contact-gr-100',
-          name: 'Αστυνομία (Полиция)',
-          specialty: 'Полиция Греции',
-          category: 'emergency',
-          phone: '100',
-        },
-      ]);
+    if (preset.emergencyContacts && preset.emergencyContacts.length > 0) {
+      setContacts(
+        preset.emergencyContacts.map((c, idx) => ({
+          id: `contact-clean-${region.toLowerCase()}-${idx}`,
+          name: c.name,
+          specialty: c.specialty,
+          category: c.category,
+          phone: c.phone,
+        }))
+      );
     } else {
       setContacts([
         {
-          id: 'contact-ru-112',
-          name: 'Единая служба спасения 112',
-          specialty: 'Экстренная помощь МЧС',
+          id: 'contact-clean-112',
+          name: 'Служба экстренной помощи',
+          specialty: 'Экстренная служба',
           category: 'emergency',
           phone: '112',
-        },
-        {
-          id: 'contact-ru-103',
-          name: 'Скорая медицинская помощь',
-          specialty: 'Неотложная помощь',
-          category: 'emergency',
-          phone: '103',
-        },
-        {
-          id: 'contact-ru-101',
-          name: 'Пожарная охрана',
-          specialty: 'МЧС',
-          category: 'emergency',
-          phone: '101',
-        },
-        {
-          id: 'contact-ru-104',
-          name: 'Аварийная служба газа',
-          specialty: 'Утечка газа',
-          category: 'emergency',
-          phone: '104',
         },
       ]);
     }
 
-    // Чистые счетчики с тарифами региона
-    if (region === 'GR' || currency === 'EUR') {
-      setMeters([
-        {
-          id: 'meter-cold-water',
-          name: 'Холодная вода (Νερό)',
-          type: 'cold_water',
-          unit: 'м³',
-          tariffRate: 1.45,
+    // Чистые счетчики (с нулевыми показаниями)
+    if (preset.defaultMeters && preset.defaultMeters.length > 0) {
+      setMeters(
+        preset.defaultMeters.map((m) => ({
+          id: m.id,
+          name: m.name,
+          type: m.type as any,
+          unit: m.unit,
+          tariffRate: m.tariffRate,
           initialValue: 0,
           readings: [],
-        },
-        {
-          id: 'meter-hot-water',
-          name: 'Горячая вода (Ζεστό νερό)',
-          type: 'hot_water',
-          unit: 'м³',
-          tariffRate: 4.8,
-          initialValue: 0,
-          readings: [],
-        },
-        {
-          id: 'meter-electricity',
-          name: 'Электроэнергия (Ρεύμα)',
-          type: 'electricity_single',
-          unit: 'кВт⋅ч',
-          tariffRate: 0.22,
-          initialValue: 0,
-          readings: [],
-        },
-      ]);
+        }))
+      );
     } else {
       setMeters([
         {
@@ -2055,16 +1998,7 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           name: 'Холодная вода',
           type: 'cold_water',
           unit: 'м³',
-          tariffRate: 50.93,
-          initialValue: 0,
-          readings: [],
-        },
-        {
-          id: 'meter-hot-water',
-          name: 'Горячая вода',
-          type: 'hot_water',
-          unit: 'м³',
-          tariffRate: 243.16,
+          tariffRate: 1.5,
           initialValue: 0,
           readings: [],
         },
@@ -2073,7 +2007,7 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           name: 'Электроэнергия',
           type: 'electricity_single',
           unit: 'кВт⋅ч',
-          tariffRate: 6.73,
+          tariffRate: 0.25,
           initialValue: 0,
           readings: [],
         },
